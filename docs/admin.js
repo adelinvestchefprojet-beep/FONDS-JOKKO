@@ -27,7 +27,7 @@ function dashSuper() {
 }
 async function loadRecentAudit() {
   const r = await sb.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(8), el = $('#recentAudit'); if (!el) return;
-  el.innerHTML = r.error ? 'Indisponible hors ligne.' : (r.data.map(a => `<div class="row-line"><span>${esc(actorName(a.user_id))} — ${esc(a.action)} <small class="muted">(${esc(a.table_name || '')})</small></span><small class="muted">${dmyhm(a.created_at)}</small></div>`).join('') || 'Aucune activité.');
+  el.innerHTML = r.error ? 'Indisponible hors ligne.' : (r.data.map(a => `<div class="row-line"><span>${typeof jrnLine === 'function' ? jrnLine(a) : esc(actorName(a.user_id) + ' — ' + a.action)}</span><small class="muted">${dmyhm(a.created_at)}</small></div>`).join('') || 'Aucune activité.');
 }
 const actorName = uidv => { const p = ME.profiles.find(x => x.user_id === uidv); return p ? fullName(p) : (uidv ? 'Utilisateur' : 'Système / inscription') };
 
@@ -188,18 +188,6 @@ VIEWS.notifications = async () => {
 };
 async function readNotif(id) { const n = ME.notifs.find(x => x.id === id); if (!n || n.lu) return; const r = await sb.from('notifications').update({ lu: true }).eq('id', id); if (!r.error) { n.lu = true; updateBell(); render() } }
 async function readAll() { const r = await sb.from('notifications').update({ lu: true }).eq('lu', false); if (!r.error) { ME.notifs.forEach(n => n.lu = true); updateBell(); render() } }
-
-/* ---------- journal d'activité ---------- */
-const AF = { q: '' };
-VIEWS.audit = async () => {
-  $('#content').innerHTML = '<div class="empty">Chargement…</div>';
-  const r = await sb.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(300);
-  if (r.error) { $('#content').innerHTML = `<div class="empty">Indisponible : ${esc(r.error.message)}</div>`; return }
-  const q = AF.q.toLowerCase(), L = r.data.filter(a => !q || (a.action + ' ' + (a.table_name || '') + ' ' + actorName(a.user_id)).toLowerCase().includes(q));
-  $('#content').innerHTML = `<div class="toolbar filters"><input class="input" placeholder="Filtrer (action, table, utilisateur)" value="${esc(AF.q)}" onchange="AF.q=this.value;render()"></div>` +
-    tableOf(['Date', 'Utilisateur', 'Action', 'Table', 'Cible', 'Détail'], L.map(a => [dmyhm(a.created_at), esc(actorName(a.user_id)), `<b>${esc(a.action)}</b>`, esc(a.table_name || ''), esc(a.target_user_id ? fullName(ME.profiles.find(p => p.user_id === a.target_user_id)) : (a.record_id || '')),
-      `<small class="muted" title="${esc(JSON.stringify(a.nouvelle_valeur || a.ancienne_valeur || {}))}">${esc(JSON.stringify(a.nouvelle_valeur || a.ancienne_valeur || {}).slice(0, 70))}…</small>`]), 'Aucune entrée.');
-};
 
 /* ---------- paramètres de la plateforme ---------- */
 VIEWS.platform = async () => {
