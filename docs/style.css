@@ -150,3 +150,17 @@ fieldset.ro{border:0;padding:0;margin:0;min-width:0}fieldset.ro:disabled .qcard{
 .modal-card .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.modal-card label{display:block;font-size:13px;font-weight:700;margin-top:10px}.modal-card .toolbar{margin-top:14px}
 .main{overflow-x:hidden}
 @media(max-width:780px){.grid2,.auth-card .two,.modal-card .two,.detail{grid-template-columns:1fr}.filters .input{width:100%}}
+
+/* ===== Logo TAATAAN rond (v6) ===== */
+.logo-round,img.brand-mark{border-radius:50%!important;background:#fff;object-fit:contain;padding:5px;aspect-ratio:1/1;border:0!important;
+  box-shadow:0 0 0 3px #fff,0 0 0 5px var(--green),0 0 0 7px #fff,0 0 0 9px var(--red),0 10px 22px rgba(4,73,42,.28);flex:none}
+img.brand-mark{width:54px;height:54px}
+.brand{gap:18px}
+.tb-title{display:flex;align-items:center;gap:20px;min-width:0}
+.tb-logo{width:46px;height:46px;padding:4px;margin-left:6px;box-shadow:0 0 0 2px #fff,0 0 0 4px var(--green),0 0 0 6px #fff,0 0 0 8px var(--red),0 6px 14px rgba(4,73,42,.22)}
+.logo-round.md{width:64px;height:64px}
+.logo-round.xl{width:132px;height:132px;padding:10px}
+.auth-badge{display:flex;justify-content:center;margin:6px 0 18px}
+@media(max-width:900px){.auth-badge{margin:-62px 0 14px;position:relative;z-index:2}.logo-round.xl{width:104px;height:104px}}
+@media(max-width:780px){.tb-title{gap:16px}.tb-logo{width:38px;height:38px;margin-left:4px}.tb-title .eyebrow{display:none}}
+@media print{.logo-round,img.brand-mark{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
