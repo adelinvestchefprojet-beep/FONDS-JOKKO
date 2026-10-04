@@ -60,7 +60,7 @@ const aScale = { type: 'colorScale', cfvo: [{ type: 'num', value: 0 }, { type: '
 const aMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 
 /* ---------- construction du classeur ---------- */
-function archBuild(X) {
+function archBuild(X, auditRows) {
   const L = (db.diagnostics || []).slice().sort((a, b) => String(a.numero).localeCompare(String(b.numero), 'fr', { numeric: true }));
   const DOMS = [...new Set((window.JOKKOO_PARAMS || []).map(p => p.domaine).filter(Boolean))];
   const now = new Date(), who = fullName(ME.profile), roleLbl = ROLE_LBL[role()] || '';
@@ -110,7 +110,7 @@ function archBuild(X) {
   });
   if (DOMS.length) ws.addConditionalFormatting({ ref: `C${d0}:C${d0 + DOMS.length - 1}`, rules: [Object.assign({ priority: 2 }, aScale)] });
   r += 2; ws.mergeCells(`B${r}:I${r + 2}`); const nt = ws.getCell('B' + r);
-  nt.value = 'Contenu du fichier : « Enquêtes » (une ligne par fiche, avec scores), « Réponses (détail) » (toutes les réponses notées), « Enquêteurs » (activité) et « Sauvegarde brute » (copie complète des fiches au format JSON, pour restauration en cas de problème). À conserver sur le PC de l’administrateur.';
+  nt.value = 'Contenu du fichier : « Enquêtes » (une ligne par fiche, avec scores), « Réponses (détail) » (toutes les réponses notées), « Enquêteurs » (activité), « Journal d’activité » (qui a fait quoi, réservé au super admin) et « Sauvegarde brute » (copie complète des fiches au format JSON, pour restauration en cas de problème). À conserver sur le PC de l’administrateur.';
   nt.font = { name: AFONT, size: 9, italic: true, color: { argb: AC.muted } }; nt.alignment = { wrapText: true, vertical: 'top', indent: 1 };
   ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
@@ -153,6 +153,8 @@ function archBuild(X) {
   });
   if (byA.size) wa.addConditionalFormatting({ ref: `F2:F${byA.size + 1}`, rules: [Object.assign({ priority: 5 }, aScale)] });
 
+  if (auditRows && auditRows.length) archAuditSheet(wb, auditRows);
+
   /* ===== 5. Sauvegarde brute (restauration) ===== */
   const wr = wb.addWorksheet('Sauvegarde brute', { properties: { tabColor: { argb: 'FF8A9A93' } }, views: [{ state: 'frozen', ySplit: 1 }] });
   wr.columns = [{ header: 'Identifiant', width: 38 }, { header: 'N°', width: 14 }, { header: 'Commune', width: 20 }, { header: 'Partie', width: 8 }, { header: 'Données JSON', width: 90 }];
@@ -162,6 +164,34 @@ function archBuild(X) {
     for (let p = 0, n = 1; p < json.length; p += 30000, n++) wr.addRow([d.id, d.numero || '', d.meta.commune || '', n, json.slice(p, p + 30000)]).eachCell(c => { c.font = { name: 'Consolas', size: 9, color: { argb: AC.muted } }; c.alignment = { vertical: 'top' } });
   });
   return wb;
+}
+
+
+/* ---------- journal d'activité (super admin) ---------- */
+const AUD_TONE = { ok: ['FFD9F2E3', 'FF0B6B3E'], info: ['FFFFF1C7', 'FF8A6A00'], warn: ['FFE7ECEF', 'FF4A5A64'], bad: ['FFFDE3E4', 'FFA3171F'] };
+function archAuditSheet(wb, rows) {
+  const w = wb.addWorksheet('Journal d’activité', { properties: { tabColor: { argb: AC.red } }, views: [{ state: 'frozen', ySplit: 1, showGridLines: false }] });
+  w.columns = [{ header: 'Date et heure', width: 18 }, { header: 'Qui', width: 26 }, { header: 'Type', width: 11 }, { header: 'Ce qui a été fait', width: 28 }, { header: 'Concerne', width: 38 }, { header: 'Précisions', width: 52 }];
+  aHeader(w.getRow(1), AC.green);
+  rows.forEach((r, i) => {
+    const d = new Date(r.date), row = w.addRow([isNaN(d) ? String(r.date) : d, r.who, r.type, r.label, r.cible || '', r.detail || '']);
+    aBody(row, i, { align: { 3: 'center' } }); row.getCell(1).numFmt = 'dd/mm/yyyy hh:mm';
+    const t = AUD_TONE[r.tone]; if (t) { const c = row.getCell(4); c.fill = aFill(t[0]); c.font = { name: AFONT, size: 10, bold: true, color: { argb: t[1] } } }
+  });
+  if (rows.length) w.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + rows.length, column: 6 } };
+  w.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  return w;
+}
+async function exportJournal() {
+  if (role() !== 'super_admin') return;
+  try {
+    await jrnLoad(true); if (JRN.err) throw new Error(JRN.err);
+    const rows = jrnFiltered(); if (!rows.length) return toast('Aucune action à exporter avec ces filtres.');
+    const X = await archLoadLib(), wb = new X.Workbook(), now = new Date(); wb.creator = 'JOKKOO – ' + fullName(ME.profile); wb.created = now;
+    archAuditSheet(wb, rows);
+    const buf = await wb.xlsx.writeBuffer(), name = `JOKKOO_Journal_${ymd(now)}.xlsx`;
+    download(name, buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Journal téléchargé : ' + name);
+  } catch (e) { toast('Export impossible : ' + errMsg(e)) }
 }
 
 /* ---------- export ---------- */
@@ -175,7 +205,9 @@ async function exportArchive(opts = {}) {
       toast('Récupération des données du serveur…'); await pullAll();
     }
     const X = await archLoadLib();
-    const wb = archBuild(X), buf = await wb.xlsx.writeBuffer();
+    let audit = null;
+    if (role() === 'super_admin' && sb && !ME.offline && typeof jrnLoad === 'function') { try { await jrnLoad(true); if (!JRN.err) audit = jrnRows(JRN.logs) } catch { } }
+    const wb = archBuild(X, audit), buf = await wb.xlsx.writeBuffer();
     const name = `JOKKOO_Archive_${ymd(new Date())}.xlsx`;
     download(name, buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     archSet({ last: new Date().toISOString(), lastName: name, lastCount: (db.diagnostics || []).length, fridayKey: ymd(lastFriday()) });
