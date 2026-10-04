@@ -4,5 +4,5 @@
    NE JAMAIS mettre service_role / sb_secret ici. */
 window.JOKKOO_CONFIG = {
   url: 'https://atqpkzev5mnqiacuvdtb.supabase.co',
-  anonKey: ''
+  anonKey: 'COLLE_ICI_TA_CLE_ANON'
 };
