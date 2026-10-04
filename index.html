@@ -1,16 +1,15 @@
 <!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="0; url=docs/index.html">
-  <title>JOKKOO — Diagnostic</title>
-</head>
-<body>
-  <p>Chargement de JOKKOO…</p>
-  <p><a href="docs/index.html">Ouvrir l'application</a></p>
-  <script>
-    window.location.replace('docs/index.html');
-  </script>
-</body>
-</html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#087443"><title>JOKKOO — Diagnostic</title>
+<style>body{margin:0;font-family:system-ui;background:#f3f8f5;color:#14231c;display:grid;place-items:center;min-height:100vh}.box{background:#fff;padding:28px;border-radius:18px;box-shadow:0 10px 34px #0001;text-align:center}a{color:#087443;font-weight:700}</style></head>
+<body><div class="box"><b>JOKKOO</b><p id="msg">Réparation du cache et chargement de l’application…</p><a href="docs/index.html">Ouvrir JOKKOO</a></div>
+<script>
+(async()=>{
+ try{
+  const regs=await navigator.serviceWorker?.getRegistrations?.()||[];
+  for(const r of regs){if((r.scope||'').includes('/FONDS-JOKKO/')) await r.unregister();}
+  if(window.caches){for(const k of await caches.keys()){if(k.toLowerCase().includes('jokkoo')) await caches.delete(k);}}
+ }catch(e){}
+ location.replace('docs/index.html?fresh=20261004');
+})();
+</script></body></html>
