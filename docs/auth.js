@@ -124,6 +124,7 @@ async function startSession() {
   $('#auth').hidden = true; $('#appShell').hidden = false; buildNav(); updateSync(); nav('dashboard');
   try { await pullAll() } catch (e) { ME.syncError = errMsg(e) }
   buildNav(); render(); syncNow();
+  if (isStaff() && typeof archiveCheck === 'function') archiveCheck();
   clearInterval(startSession._t); startSession._t = setInterval(() => { if (!document.hidden) { syncNow(); loadNotifs() } }, 60000);
 }
 async function revalidate() { // retour du réseau après un mode hors ligne : on vérifie que le compte est toujours actif
