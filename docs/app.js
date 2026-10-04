@@ -129,7 +129,7 @@ function renderSettings() {
   <div class="card"><h3 style="margin-top:0">Synchronisation</h3><p class="muted">Les enquêtes sont enregistrées sur l’appareil, même sans réseau, puis envoyées automatiquement dès que la connexion revient.</p>
   <p><b>${n}</b> fiche(s) en attente d’envoi. ${ME.syncError ? `<span class="danger-text">Dernière erreur : ${esc(ME.syncError)}</span>` : ''}</p>
   <div class="toolbar"><button class="btn btn-secondary" onclick="syncNow(true)">↻ Synchroniser maintenant</button><button class="btn btn-danger" onclick="clearLocal()">Libérer l’espace (fiches déjà envoyées)</button></div></div>
-  <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Connexion au serveur</h3><p class="muted small">Projet : ${esc(getCfg().url || '—')} · seule la clé publique (anon) est utilisée dans cette application.</p></div>`;
+  ${role() === 'super_admin' ? `<div class="card" style="margin-top:16px"><h3 style="margin-top:0">Connexion au serveur</h3><p class="muted small">Projet : ${esc(getCfg().url || '—')} · seule la clé publique (anon) est utilisée dans cette application.</p></div>` : ''}`;
 }
 function clearLocal() {
   if (!confirm('Supprimer de cet appareil les fiches déjà envoyées au serveur ? Les fiches en attente d’envoi sont conservées.')) return;
