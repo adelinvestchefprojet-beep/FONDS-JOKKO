@@ -1,242 +1,222 @@
-/* JOKKOO – archive Excel complète (design moderne) + téléchargement automatique du vendredi.
-   Réservé à l'administrateur et au super admin. Le fichier contient les données que le serveur autorise
-   pour ce compte (RLS) : toutes les communes si l'administrateur a toutes les communes dans son périmètre. */
-const ARCH = { busy: false, CDN: 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js' };
-const archKey = () => 'jokkoo_archive_v1_' + ((ME.profile && ME.profile.id) || 'x');
-const archGet = () => { try { return JSON.parse(localStorage.getItem(archKey()) || '{}') || {} } catch { return {} } };
-const archSet = o => { try { localStorage.setItem(archKey(), JSON.stringify(Object.assign(archGet(), o))) } catch { } };
-const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-const lastFriday = (now = new Date()) => { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate()); d.setDate(d.getDate() - ((d.getDay() + 2) % 7)); return d };
-const nextFriday = (now = new Date()) => { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate()); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7)); return d };
-const longDate = d => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+/* JOKKOO – espaces Super admin / Administrateur + écrans communs (notifications, profil).
+   Chaque action appelle directement l'API : c'est la base (RLS + triggers) qui accepte ou refuse. */
+const PERMS = [['enquetes.validate', 'Valider les enquêtes de son périmètre']];
+const denied = r => (r.error ? r.error.message : 'droits insuffisants');
+async function dbUpdate(table, patch, col, val, okMsg) {
+  const r = await sb.from(table).update(patch).eq(col, val).select();
+  if (r.error || !r.data.length) { toast('Refusé : ' + denied(r)); return false }
+  toast(okMsg || 'Enregistré'); return true;
+}
+const selOpts = (arr, cur, blank) => (blank ? `<option value="">${blank}</option>` : '') + arr.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('');
+const communesOpts = (cur, blank) => selOpts(ME.communes.map(c => [c.id, c.nom]), cur, blank);
+const countOf = (f) => db.diagnostics.filter(f).length;
 
-/* l'archive du vendredi est due si celle du dernier vendredi n'a pas encore été téléchargée */
-function archiveDue() {
-  if (!isStaff() || ME.offline || !navigator.onLine) return false;
-  const st = archGet();
-  return st.auto !== false && st.fridayKey !== ymd(lastFriday());
+/* ---------- tableaux de bord ---------- */
+function dashSuper() {
+  const P = ME.profiles.filter(p => p.statut !== 'deleted'), ds = db.diagnostics, today = new Date().toISOString().slice(0, 10);
+  const pend = P.filter(p => p.statut === 'pending');
+  $('#content').innerHTML = `<div class="card hello"><div><h2 style="margin:0">Administration de la plateforme</h2><div class="muted">Connecté en tant que ${esc(fullName(ME.profile))}</div></div>${pend.length ? `<button class="btn btn-gold" onclick="nav('pending')">${pend.length} inscription(s) à valider</button>` : ''}</div>
+  ${kpiBlock('Utilisateurs', [[P.length, 'Total'], [pend.length, 'En attente', 'var(--gold)'], [P.filter(p => p.statut === 'active').length, 'Actifs'], [P.filter(p => p.statut === 'inactive').length, 'Inactifs', 'var(--red)'], [P.filter(p => p.role === 'admin').length, 'Administrateurs'], [P.filter(p => p.role === 'enqueteur').length, 'Enquêteurs']])}
+  ${kpiBlock('Territoire', [[ME.communes.length, 'Communes'], [ME.communes.filter(c => c.actif).length, 'Communes actives'], [ME.communes.filter(c => !c.actif).length, 'Communes inactives', 'var(--red)']])}
+  ${kpiBlock('Enquêtes', [[ds.length, 'Total'], [countOf(d => sameDay(d.createdAt, today)), 'Aujourd’hui'], [countOf(d => since(d.createdAt, 7)), 'Cette semaine'], [countOf(d => since(d.createdAt, 30)), 'Ce mois'], [countOf(d => !isFinal(d)), 'En cours', 'var(--gold)'], [countOf(isFinal), 'Terminées']])}
+  <div class="section-title"><h2>Activité</h2></div><div class="grid2">
+  <div class="card"><h3 style="margin-top:0">Dernières inscriptions <small class="muted">(+${P.filter(p => since(p.created_at, 7)).length} cette semaine)</small></h3>${P.slice(0, 5).map(p => `<div class="row-line"><span><b>${esc(fullName(p))}</b><br><small class="muted">${esc(communeName(p.commune_id) || '—')} · ${dmy(p.created_at)}</small></span>${statusBadge(p)}</div>`).join('') || '<div class="muted">Aucune.</div>'}</div>
+  <div class="card"><h3 style="margin-top:0">Dernières enquêtes</h3>${ds.slice(0, 5).map(d => `<div class="row-line"><span><b>${esc(d.meta.nom || d.numero)}</b><br><small class="muted">${esc(d.meta.commune || '—')} · ${esc(d.meta.agent || '—')}</small></span><span class="badge ${badgeCls(d.status)}">${d.status}</span></div>`).join('') || '<div class="muted">Aucune.</div>'}</div></div>
+  <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Activité récente</h3><div id="recentAudit" class="muted">Chargement…</div></div>`;
+  loadRecentAudit();
+}
+async function loadRecentAudit() {
+  const r = await sb.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(8), el = $('#recentAudit'); if (!el) return;
+  el.innerHTML = r.error ? 'Indisponible hors ligne.' : (r.data.map(a => `<div class="row-line"><span>${typeof jrnLine === 'function' ? jrnLine(a) : esc(actorName(a.user_id) + ' — ' + a.action)}</span><small class="muted">${dmyhm(a.created_at)}</small></div>`).join('') || 'Aucune activité.');
+}
+const actorName = uidv => { const p = ME.profiles.find(x => x.user_id === uidv); return p ? fullName(p) : (uidv ? 'Utilisateur' : 'Système / inscription') };
+
+function dashAdmin() {
+  const ds = db.diagnostics, mine = ME.adminCommunes.filter(a => a.admin_id === ME.profile.id).map(a => a.commune_id), pr = ME.profiles.filter(p => p.role === 'enqueteur');
+  $('#content').innerHTML = `<div class="card hello"><div><h2 style="margin:0">Espace administrateur</h2><div class="muted">Périmètre : ${mine.map(communeName).filter(Boolean).map(esc).join(', ') || 'aucune commune attribuée pour le moment'}</div></div></div>
+  ${kpiBlock('Mon périmètre', [[mine.length, 'Communes'], [pr.length, 'Enquêteurs'], [ds.length, 'Enquêtes'], [countOf(d => since(d.createdAt, 7)), 'Cette semaine'], [countOf(d => !isFinal(d)), 'En cours', 'var(--gold)'], [countOf(d => d.status === 'Définitive'), 'À valider', 'var(--red)']])}
+  <div class="section-title"><h2>Dernières enquêtes</h2></div>${enqTable(ds.slice(0, 8))}`;
 }
 
-function archLoadLib() {
-  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
-  return new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = ARCH.CDN;
-    s.onload = () => window.ExcelJS ? res(window.ExcelJS) : rej(new Error('Module Excel indisponible'));
-    s.onerror = () => rej(new Error('Module Excel non chargé (connexion internet requise)'));
-    document.head.appendChild(s);
-  });
-}
-
-/* ---------- mise en forme ---------- */
-const AC = { green: 'FF087443', greenD: 'FF04492A', red: 'FFC9232D', gold: 'FFD7A62A', light: 'FFE6F4EC', line: 'FFDBE7E0', ink: 'FF14231C', muted: 'FF66756E', zebra: 'FFF6FAF8', white: 'FFFFFFFF' };
-const AST = { 'Définitive': ['FFD9F2E3', 'FF0B6B3E'], 'Validée': ['FFBFE8D2', 'FF04492A'], 'Sauvegardée': ['FFFFF1C7', 'FF8A6A00'], 'Brouillon': ['FFFDE3E4', 'FFA3171F'], 'Archivée': ['FFE7ECEF', 'FF4A5A64'] };
-const aFill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
-const aLine = c => ({ style: 'thin', color: { argb: c } });
-const AFONT = 'Calibri';
-const aCut = s => { s = String(s == null ? '' : s); return s.length > 32000 ? s.slice(0, 32000) + '…' : s };
-function aVal(v) {
-  if (v == null) return '';
-  if (Array.isArray(v)) return v.map(aVal).join('; ');
-  if (typeof v === 'object') { if ('done' in v) return (v.done ? 'Réalisé' : 'Non réalisé') + (v.date ? ' le ' + v.date : ''); return JSON.stringify(v) }
-  return String(v);
-}
-function aHeader(row, color) {
-  row.height = 26;
-  row.eachCell(c => { c.font = { name: AFONT, bold: true, color: { argb: AC.white }, size: 11 }; c.fill = aFill(color || AC.green); c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = { bottom: { style: 'medium', color: { argb: AC.red } } } });
-}
-function aBody(row, i, opt = {}) {
-  row.eachCell({ includeEmpty: true }, (c, n) => {
-    c.font = Object.assign({ name: AFONT, size: 10, color: { argb: AC.ink } }, opt.font || {});
-    if (i % 2 === 0) c.fill = aFill(AC.zebra);
-    c.border = { bottom: aLine(AC.line) };
-    c.alignment = Object.assign({ vertical: 'top', wrapText: true }, (opt.align && opt.align[n]) ? { horizontal: opt.align[n] } : {});
-  });
-}
-function aStatus(cell) {
-  const s = AST[cell.value]; if (!s) return;
-  cell.fill = aFill(s[0]); cell.font = { name: AFONT, size: 10, bold: true, color: { argb: s[1] } }; cell.alignment = { vertical: 'top', horizontal: 'center' };
-}
-const aScale = { type: 'colorScale', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 0.5 }, { type: 'num', value: 1 }], color: [{ argb: 'FFF6B8BC' }, { argb: 'FFFFE8A3' }, { argb: 'FF8FD6AE' }] };
-const aMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
-
-/* ---------- construction du classeur ---------- */
-function archBuild(X, auditRows) {
-  const L = (db.diagnostics || []).slice().sort((a, b) => String(a.numero).localeCompare(String(b.numero), 'fr', { numeric: true }));
-  const DOMS = [...new Set((window.JOKKOO_PARAMS || []).map(p => p.domaine).filter(Boolean))];
-  const now = new Date(), who = fullName(ME.profile), roleLbl = ROLE_LBL[role()] || '';
-  const wb = new X.Workbook(); wb.creator = 'JOKKOO – ' + who; wb.created = now; wb.title = 'Archive JOKKOO';
-  const info = L.map(d => { const s = scoreDiag(d); return { d, pct: s.count ? s.pct : null, count: s.count, dom: domainScores([d]) } });
-  const fin = s => s === 'Définitive' || s === 'Validée';
-
-  /* ===== 1. Synthèse ===== */
-  const ws = wb.addWorksheet('Synthèse', { properties: { tabColor: { argb: AC.green } }, views: [{ showGridLines: false }] });
-  ws.columns = [{ width: 2 }, { width: 28 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }];
-  ws.mergeCells('B1:I2'); const t = ws.getCell('B1'); t.value = 'JOKKOO · Archive des enquêtes'; t.font = { name: AFONT, size: 22, bold: true, color: { argb: AC.white } }; t.fill = aFill(AC.greenD); t.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-  ws.getRow(1).height = 24; ws.getRow(2).height = 24;
-  [['B3:D3', AC.green], ['E3:F3', AC.gold], ['G3:I3', AC.red]].forEach(([r, c]) => { ws.mergeCells(r); ws.getCell(r.split(':')[0]).fill = aFill(c) }); ws.getRow(3).height = 6;
-  ws.mergeCells('B4:I4'); const g = ws.getCell('B4'); g.value = `Généré le ${longDate(now)} à ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · par ${who}${roleLbl ? ' (' + roleLbl + ')' : ''}`; g.font = { name: AFONT, size: 10, italic: true, color: { argb: AC.muted } }; g.alignment = { indent: 1, vertical: 'middle' }; ws.getRow(4).height = 22;
-
-  const nFin = L.filter(d => fin(d.status)).length, nProg = L.filter(d => d.status === 'Brouillon' || d.status === 'Sauvegardée').length, avg = aMean(info.filter(x => x.pct != null).map(x => x.pct));
-  const cards = [['B', 'C', 'ENQUÊTES', L.length, AC.green, '0'], ['D', 'E', 'FINALISÉES', nFin, AC.red, '0'], ['F', 'G', 'EN COURS / BROUILLONS', nProg, AC.gold, '0'], ['H', 'I', 'SCORE MOYEN', avg, AC.green, '0%']];
-  cards.forEach(([a, b, lbl, val, col, fmt]) => {
-    ws.mergeCells(`${a}6:${b}6`); ws.mergeCells(`${a}7:${b}8`);
-    const l = ws.getCell(a + '6'); l.value = lbl; l.font = { name: AFONT, size: 9, bold: true, color: { argb: AC.muted } }; l.fill = aFill(AC.white); l.alignment = { horizontal: 'center', vertical: 'middle' }; l.border = { top: { style: 'thick', color: { argb: col } } };
-    const v = ws.getCell(a + '7'); v.value = val == null ? '—' : val; v.numFmt = fmt; v.font = { name: AFONT, size: 28, bold: true, color: { argb: col === AC.gold ? 'FF9A7410' : col } }; v.fill = aFill(AC.light); v.alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getCell(b + '7').fill = aFill(AC.light); ws.getCell(a + '8').fill = aFill(AC.light); ws.getCell(b + '8').fill = aFill(AC.light);
-  });
-  ws.getRow(6).height = 22; ws.getRow(7).height = 24; ws.getRow(8).height = 24;
-
-  let r = 10; ws.mergeCells(`B${r}:I${r}`); const s1 = ws.getCell('B' + r); s1.value = 'Répartition par commune'; s1.font = { name: AFONT, size: 14, bold: true, color: { argb: AC.green } }; s1.border = { bottom: { style: 'medium', color: { argb: AC.red } } }; ws.getRow(r).height = 24;
-  r++; const h1 = ws.getRow(r); h1.values = [null, 'Commune', 'Enquêtes', 'Brouillons', 'Sauvegardées', 'Définitives', 'Validées', 'Archivées', 'Score moyen']; aHeader(h1);
-  const comIds = [...new Set([...ME.communes.map(c => c.id), ...L.map(d => d.meta.communeId).filter(Boolean)])];
-  const comRows = comIds.map(id => ({ nom: communeName(id) || '(commune inconnue)', L: info.filter(x => x.d.meta.communeId === id) })).filter(c => c.L.length).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
-  const cnt = (A, s) => A.filter(x => x.d.status === s).length, first = r + 1;
-  comRows.forEach((c, i) => {
-    const row = ws.addRow([null, c.nom, c.L.length, cnt(c.L, 'Brouillon'), cnt(c.L, 'Sauvegardée'), cnt(c.L, 'Définitive'), cnt(c.L, 'Validée'), cnt(c.L, 'Archivée'), aMean(c.L.filter(x => x.pct != null).map(x => x.pct))]); r++;
-    aBody(row, i, { align: { 3: 'center', 4: 'center', 5: 'center', 6: 'center', 7: 'center', 8: 'center', 9: 'center' } }); row.getCell(2).font = { name: AFONT, size: 10, bold: true, color: { argb: AC.ink } }; row.getCell(9).numFmt = '0%';
-  });
-  if (!comRows.length) { ws.addRow([null, 'Aucune enquête à archiver.']); r++ }
-  const tot = ws.addRow([null, 'TOTAL', L.length, cnt(info, 'Brouillon'), cnt(info, 'Sauvegardée'), cnt(info, 'Définitive'), cnt(info, 'Validée'), cnt(info, 'Archivée'), avg]); r++;
-  tot.eachCell((c, n) => { if (n < 2) return; c.font = { name: AFONT, size: 11, bold: true, color: { argb: AC.greenD } }; c.fill = aFill(AC.light); c.border = { top: { style: 'medium', color: { argb: AC.green } } }; c.alignment = { horizontal: n === 2 ? 'left' : 'center' } }); tot.getCell(9).numFmt = '0%';
-  if (comRows.length) ws.addConditionalFormatting({ ref: `I${first}:I${first + comRows.length - 1}`, rules: [Object.assign({ priority: 1 }, aScale)] });
-
-  r += 2; ws.mergeCells(`B${r}:I${r}`); const s2 = ws.getCell('B' + r); s2.value = 'Score moyen par domaine'; s2.font = { name: AFONT, size: 14, bold: true, color: { argb: AC.green } }; s2.border = { bottom: { style: 'medium', color: { argb: AC.red } } }; ws.getRow(r).height = 24;
-  r++; const h2 = ws.getRow(r); h2.getCell(2).value = 'Domaine'; h2.getCell(3).value = 'Score moyen'; h2.getCell(4).value = 'Fiches notées'; aHeader(h2);
-  const d0 = r + 1; let di = 0;
-  DOMS.forEach(dn => {
-    const vals = info.map(x => x.dom[dn]).filter(v => v != null); const row = ws.getRow(++r);
-    row.getCell(2).value = dn; row.getCell(3).value = aMean(vals); row.getCell(3).numFmt = '0%'; row.getCell(4).value = vals.length;
-    [2, 3, 4].forEach(n => { const c = row.getCell(n); c.font = { name: AFONT, size: 10, bold: n === 2, color: { argb: AC.ink } }; if (di % 2 === 0) c.fill = aFill(AC.zebra); c.border = { bottom: aLine(AC.line) }; c.alignment = { horizontal: n === 2 ? 'left' : 'center' } }); di++;
-  });
-  if (DOMS.length) ws.addConditionalFormatting({ ref: `C${d0}:C${d0 + DOMS.length - 1}`, rules: [Object.assign({ priority: 2 }, aScale)] });
-  r += 2; ws.mergeCells(`B${r}:I${r + 2}`); const nt = ws.getCell('B' + r);
-  nt.value = 'Contenu du fichier : « Enquêtes » (une ligne par fiche, avec scores), « Réponses (détail) » (toutes les réponses notées), « Enquêteurs » (activité), « Journal d’activité » (qui a fait quoi, réservé au super admin) et « Sauvegarde brute » (copie complète des fiches au format JSON, pour restauration en cas de problème). À conserver sur le PC de l’administrateur.';
-  nt.font = { name: AFONT, size: 9, italic: true, color: { argb: AC.muted } }; nt.alignment = { wrapText: true, vertical: 'top', indent: 1 };
-  ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-
-  /* ===== 2. Enquêtes ===== */
-  const we = wb.addWorksheet('Enquêtes', { properties: { tabColor: { argb: AC.red } }, views: [{ state: 'frozen', xSplit: 2, ySplit: 1, showGridLines: false }] });
-  const heads = ['N°', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'Date de l’enquête', 'Créée le', 'Dernière mise à jour', 'Score global', ...DOMS, 'Questions notées', 'Photos'];
-  we.columns = heads.map((h, i) => ({ header: h, width: i === 0 ? 14 : i === 1 ? 34 : i < 4 ? 22 : i === 4 ? 14 : i < 8 ? 18 : i === 8 ? 12 : 16 }));
-  aHeader(we.getRow(1), AC.green);
-  const toDate = s => { if (!s) return null; const d = new Date(s); return isNaN(d) ? String(s) : d };
-  info.forEach((x, i) => {
-    const d = x.d, row = we.addRow([d.numero || '', d.meta.nom || '', d.meta.commune || '', d.meta.agent || '', d.status, toDate(d.meta.date), toDate(d.createdAt), toDate(d.updatedAt), x.pct, ...DOMS.map(dn => x.dom[dn] == null ? null : x.dom[dn]), x.count, Object.keys(d.photos || {}).length]);
-    const al = {}; for (let n = 5; n <= heads.length; n++) al[n] = 'center'; aBody(row, i, { align: al });
-    row.getCell(2).font = { name: AFONT, size: 10, bold: true, color: { argb: AC.ink } }; aStatus(row.getCell(5));
-    row.getCell(6).numFmt = 'dd/mm/yyyy'; row.getCell(7).numFmt = 'dd/mm/yyyy'; row.getCell(8).numFmt = 'dd/mm/yyyy hh:mm';
-    for (let n = 9; n <= 9 + DOMS.length; n++) row.getCell(n).numFmt = '0%';
-  });
-  if (info.length) { we.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + info.length, column: heads.length } }; we.addConditionalFormatting({ ref: `I2:${we.getColumn(9 + DOMS.length).letter}${info.length + 1}`, rules: [Object.assign({ priority: 3 }, aScale)] }) }
-  we.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-
-  /* ===== 3. Réponses (détail) ===== */
-  const wd = wb.addWorksheet('Réponses (détail)', { properties: { tabColor: { argb: AC.gold } }, views: [{ state: 'frozen', xSplit: 1, ySplit: 1, showGridLines: false }] });
-  wd.columns = [{ header: 'N°', width: 14 }, { header: 'Organisation', width: 28 }, { header: 'Commune', width: 20 }, { header: 'Enquêteur', width: 20 }, { header: 'Statut', width: 14 }, { header: 'Visite', width: 22 }, { header: 'Question', width: 56 }, { header: 'Réponse', width: 40 }, { header: 'Score /3', width: 10 }, { header: 'Commentaire', width: 38 }];
-  aHeader(wd.getRow(1), AC.green); let k = 0;
-  L.forEach(d => (window.JOKKOO_VISITES || []).forEach(v => v.questions.forEach(q => {
-    const val = d.answers ? d.answers[q.id] : undefined; if (val === undefined || val === null || val === '') return;
-    const p = paramFor(q, val), row = wd.addRow([d.numero || '', d.meta.nom || '', d.meta.commune || '', d.meta.agent || '', d.status, v.title || v.id, aCut(q.label), aCut(aVal(val)), p ? Number(p.score) : null, p ? aCut(p.commentaire) : '']);
-    aBody(row, k++, { align: { 5: 'center', 9: 'center' } }); aStatus(row.getCell(5));
-  })));
-  if (k) { wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + k, column: 10 } }; wd.addConditionalFormatting({ ref: `I2:I${k + 1}`, rules: [{ type: 'colorScale', priority: 4, cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1.5 }, { type: 'num', value: 3 }], color: [{ argb: 'FFF6B8BC' }, { argb: 'FFFFE8A3' }, { argb: 'FF8FD6AE' }] }] }) }
-
-  /* ===== 4. Enquêteurs ===== */
-  const wa = wb.addWorksheet('Enquêteurs', { properties: { tabColor: { argb: AC.greenD } }, views: [{ state: 'frozen', ySplit: 1, showGridLines: false }] });
-  wa.columns = [{ header: 'Enquêteur', width: 30 }, { header: 'Commune', width: 24 }, { header: 'Enquêtes', width: 12 }, { header: 'Finalisées', width: 12 }, { header: 'En cours', width: 12 }, { header: 'Score moyen', width: 14 }, { header: 'Dernière activité', width: 20 }];
-  aHeader(wa.getRow(1), AC.green);
-  const byA = new Map(); info.forEach(x => { const key = (x.d.meta.agent || '—') + '|' + (x.d.meta.communeId || ''); if (!byA.has(key)) byA.set(key, { nom: x.d.meta.agent || '—', com: x.d.meta.commune || '', A: [] }); byA.get(key).A.push(x) });
-  [...byA.values()].sort((a, b) => a.nom.localeCompare(b.nom, 'fr')).forEach((e, i) => {
-    const last = e.A.map(x => x.d.updatedAt || x.d.createdAt).filter(Boolean).sort().pop();
-    const row = wa.addRow([e.nom, e.com, e.A.length, e.A.filter(x => fin(x.d.status)).length, e.A.filter(x => !fin(x.d.status) && x.d.status !== 'Archivée').length, aMean(e.A.filter(x => x.pct != null).map(x => x.pct)), toDate(last)]);
-    aBody(row, i, { align: { 3: 'center', 4: 'center', 5: 'center', 6: 'center', 7: 'center' } }); row.getCell(1).font = { name: AFONT, size: 10, bold: true, color: { argb: AC.ink } }; row.getCell(6).numFmt = '0%'; row.getCell(7).numFmt = 'dd/mm/yyyy hh:mm';
-  });
-  if (byA.size) wa.addConditionalFormatting({ ref: `F2:F${byA.size + 1}`, rules: [Object.assign({ priority: 5 }, aScale)] });
-
-  if (auditRows && auditRows.length) archAuditSheet(wb, auditRows);
-
-  /* ===== 5. Sauvegarde brute (restauration) ===== */
-  const wr = wb.addWorksheet('Sauvegarde brute', { properties: { tabColor: { argb: 'FF8A9A93' } }, views: [{ state: 'frozen', ySplit: 1 }] });
-  wr.columns = [{ header: 'Identifiant', width: 38 }, { header: 'N°', width: 14 }, { header: 'Commune', width: 20 }, { header: 'Partie', width: 8 }, { header: 'Données JSON', width: 90 }];
-  aHeader(wr.getRow(1), 'FF4A5A64');
-  L.forEach(d => {
-    const json = JSON.stringify({ id: d.id, numero: d.numero, status: d.status, createdAt: d.createdAt, updatedAt: d.updatedAt, meta: d.meta, answers: d.answers, photos: d.photos, history: d.history });
-    for (let p = 0, n = 1; p < json.length; p += 30000, n++) wr.addRow([d.id, d.numero || '', d.meta.commune || '', n, json.slice(p, p + 30000)]).eachCell(c => { c.font = { name: 'Consolas', size: 9, color: { argb: AC.muted } }; c.alignment = { vertical: 'top' } });
-  });
-  return wb;
-}
-
-
-/* ---------- journal d'activité (super admin) ---------- */
-const AUD_TONE = { ok: ['FFD9F2E3', 'FF0B6B3E'], info: ['FFFFF1C7', 'FF8A6A00'], warn: ['FFE7ECEF', 'FF4A5A64'], bad: ['FFFDE3E4', 'FFA3171F'] };
-function archAuditSheet(wb, rows) {
-  const w = wb.addWorksheet('Journal d’activité', { properties: { tabColor: { argb: AC.red } }, views: [{ state: 'frozen', ySplit: 1, showGridLines: false }] });
-  w.columns = [{ header: 'Date et heure', width: 18 }, { header: 'Qui', width: 26 }, { header: 'Type', width: 11 }, { header: 'Ce qui a été fait', width: 28 }, { header: 'Concerne', width: 38 }, { header: 'Précisions', width: 52 }];
-  aHeader(w.getRow(1), AC.green);
-  rows.forEach((r, i) => {
-    const d = new Date(r.date), row = w.addRow([isNaN(d) ? String(r.date) : d, r.who, r.type, r.label, r.cible || '', r.detail || '']);
-    aBody(row, i, { align: { 3: 'center' } }); row.getCell(1).numFmt = 'dd/mm/yyyy hh:mm';
-    const t = AUD_TONE[r.tone]; if (t) { const c = row.getCell(4); c.fill = aFill(t[0]); c.font = { name: AFONT, size: 10, bold: true, color: { argb: t[1] } } }
-  });
-  if (rows.length) w.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + rows.length, column: 6 } };
-  w.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-  return w;
-}
-async function exportJournal() {
-  if (role() !== 'super_admin') return;
-  try {
-    await jrnLoad(true); if (JRN.err) throw new Error(JRN.err);
-    const rows = jrnFiltered(); if (!rows.length) return toast('Aucune action à exporter avec ces filtres.');
-    const X = await archLoadLib(), wb = new X.Workbook(), now = new Date(); wb.creator = 'JOKKOO – ' + fullName(ME.profile); wb.created = now;
-    archAuditSheet(wb, rows);
-    const buf = await wb.xlsx.writeBuffer(), name = `JOKKOO_Journal_${ymd(now)}.xlsx`;
-    download(name, buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Journal téléchargé : ' + name);
-  } catch (e) { toast('Export impossible : ' + errMsg(e)) }
-}
-
-/* ---------- export ---------- */
-async function exportArchive(opts = {}) {
-  if (ARCH.busy) return false;
-  if (!isStaff()) return false;
-  ARCH.busy = true;
-  try {
-    if (!opts.auto) {
-      if (!navigator.onLine || ME.offline) throw new Error('connexion internet requise pour récupérer toutes les données');
-      toast('Récupération des données du serveur…'); await pullAll();
+/* ---------- utilisateurs ---------- */
+const UF = { q: '', commune: '', role: '', statut: '' };
+function userRows(list) {
+  const me = ME.profile.id, sa = role() === 'super_admin';
+  return list.map(p => {
+    const acts = [`<button class="btn btn-secondary btn-sm" onclick="userView('${p.id}')">Voir</button>`];
+    if (sa && p.id !== me) {
+      acts.push(`<button class="btn btn-secondary btn-sm" onclick="userEdit('${p.id}')">Modifier</button>`);
+      if (p.statut === 'pending') acts.push(`<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','valider')">Valider</button><button class="btn btn-danger btn-sm" onclick="userAct('${p.id}','refuser')">Refuser</button>`);
+      if (p.statut === 'active') acts.push(`<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','desactiver')">Désactiver</button>`);
+      if (p.statut === 'inactive' || p.statut === 'rejected') acts.push(`<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','reactiver')">${p.statut === 'rejected' ? 'Activer' : 'Réactiver'}</button>`);
+      if (p.role !== 'super_admin') acts.push(`<select class="input sm" onchange="userRole('${p.id}',this.value)" title="Rôle">${selOpts([['enqueteur', 'Enquêteur'], ['admin', 'Administrateur']], p.role)}</select>`);
+      acts.push(`<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','reset')">Réinitialiser l’accès</button><button class="btn btn-danger btn-sm" onclick="userAct('${p.id}','supprimer')">Supprimer</button>`);
     }
-    const X = await archLoadLib();
-    let audit = null;
-    if (role() === 'super_admin' && sb && !ME.offline && typeof jrnLoad === 'function') { try { await jrnLoad(true); if (!JRN.err) audit = jrnRows(JRN.logs) } catch { } }
-    const wb = archBuild(X, audit), buf = await wb.xlsx.writeBuffer();
-    const name = `JOKKOO_Archive_${ymd(new Date())}.xlsx`;
-    download(name, buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    archSet({ last: new Date().toISOString(), lastName: name, lastCount: (db.diagnostics || []).length, fridayKey: ymd(lastFriday()) });
-    toast(`${opts.auto ? 'Archive du vendredi téléchargée' : 'Archive téléchargée'} : ${name}`);
-    if (typeof view !== 'undefined' && view === 'archive') render();
-    return true;
-  } catch (e) { toast('Archive impossible : ' + errMsg(e)); return false }
-  finally { ARCH.busy = false }
+    return [`<b>${esc(fullName(p))}</b>`, esc(communeName(p.commune_id) || '—'), esc(p.email || ''), esc(p.telephone || ''), esc(ROLE_LBL[p.role] || p.role), statusBadge(p), dmy(p.created_at), `<div class="acts">${acts.join('')}</div>`];
+  });
 }
-
-/* appelé après l'ouverture de session (administrateur / super admin) */
-async function archiveCheck() {
-  try {
-    if (!archiveDue() || ME.syncError || !(db.diagnostics || []).length) return;
-    await exportArchive({ auto: true });
-  } catch (e) { console.warn('archive', e) }
+function usersFiltered(base) {
+  const q = UF.q.toLowerCase();
+  return base.filter(p => (UF.statut ? p.statut === UF.statut : p.statut !== 'deleted') && (!UF.commune || p.commune_id === UF.commune) && (!UF.role || p.role === UF.role) && (!q || (fullName(p) + ' ' + (p.email || '')).toLowerCase().includes(q)));
 }
-
-/* ---------- écran « Archive Excel » ---------- */
-VIEWS.archive = () => {
-  const st = archGet(), L = db.diagnostics || [], due = archiveDue();
-  const com = new Set(L.map(d => d.meta.communeId).filter(Boolean)).size, nf = L.filter(d => d.status === 'Définitive' || d.status === 'Validée').length;
-  $('#content').innerHTML = `<div class="card"><h3 style="margin-top:0">Archive Excel de sécurité</h3>
-  <p class="muted">Un fichier Excel complet (synthèse par commune, toutes les enquêtes, toutes les réponses, activité des enquêteurs et copie brute des fiches) à conserver sur le PC de l’administrateur, en plus des données du serveur.</p>
-  ${due ? '<div class="form-msg err" style="margin:8px 0">L’archive du vendredi n’a pas encore été téléchargée : elle se télécharge à l’ouverture de l’application, ou cliquez ci-dessous.</div>' : ''}
-  <div class="toolbar"><button class="btn btn-primary" onclick="exportArchive()">⇩ Télécharger l’archive Excel maintenant</button></div>
-  <p class="small" style="margin:14px 0 4px"><b>Dernière archive :</b> ${st.last ? esc(dmyhm(st.last)) + ' — ' + esc(st.lastName || '') + ' (' + (st.lastCount || 0) + ' enquête(s))' : '<span class="muted">aucune sur cet appareil</span>'}</p>
-  <p class="small" style="margin:4px 0"><b>Prochain vendredi :</b> ${esc(longDate(nextFriday()))}</p>
-  <label class="choice" style="margin-top:10px"><input type="checkbox" ${st.auto === false ? '' : 'checked'} onchange="archSet({auto:this.checked});render()"> Télécharger automatiquement chaque vendredi, à l’ouverture de l’application</label>
-  <p class="muted small" style="margin-top:8px">Le téléchargement automatique se fait quand l’application est ouverte sur cet appareil (le vendredi, ou à la première ouverture suivante si le vendredi a été manqué). Gardez aussi une copie sur un disque externe.</p></div>` +
-    kpiBlock('Contenu de la prochaine archive', [[L.length, 'Enquêtes'], [com, 'Communes', 'var(--red)'], [nf, 'Fiches finalisées', 'var(--gold)']]);
+VIEWS.users = () => {
+  const sa = role() === 'super_admin', base = sa ? ME.profiles : ME.profiles.filter(p => p.role === 'enqueteur');
+  $('#content').innerHTML = `<div class="toolbar filters"><input class="input" placeholder="Nom ou email" value="${esc(UF.q)}" onchange="UF.q=this.value;render()">
+  <select class="input" onchange="UF.commune=this.value;render()">${communesOpts(UF.commune, 'Toutes les communes')}</select>
+  ${sa ? `<select class="input" onchange="UF.role=this.value;render()">${selOpts([['super_admin', 'Super admin'], ['admin', 'Administrateur'], ['enqueteur', 'Enquêteur']], UF.role, 'Tous les rôles')}</select>` : ''}
+  <select class="input" onchange="UF.statut=this.value;render()">${selOpts(Object.entries(STAT_LBL), UF.statut, 'Tous les statuts')}</select></div>
+  ${tableOf(['Utilisateur', 'Commune', 'Email', 'Téléphone', 'Rôle', 'Statut', 'Inscrit le', 'Actions'], userRows(usersFiltered(base)), 'Aucun utilisateur.')}`;
 };
+VIEWS.pending = () => {
+  const L = ME.profiles.filter(p => p.statut === 'pending');
+  $('#content').innerHTML = `<div class="section-title"><h2>Inscriptions en attente (${L.length})</h2></div>` + tableOf(['Nom', 'Email', 'Téléphone', 'Commune', 'Date', 'Statut', 'Action'],
+    L.map(p => [`<b>${esc(fullName(p))}</b>`, esc(p.email || ''), esc(p.telephone || ''), esc(communeName(p.commune_id) || '<à définir>'), dmy(p.created_at), statusBadge(p),
+    `<div class="acts"><button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','valider')">Valider</button><button class="btn btn-danger btn-sm" onclick="userAct('${p.id}','refuser')">Refuser</button><button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','supprimer')">Supprimer</button></div>`]), 'Aucune inscription en attente.');
+};
+async function userAct(id, act) {
+  const p = profileById(id); if (!p) return;
+  if (act === 'reset') {
+    if (!confirm('Envoyer un email de réinitialisation du mot de passe à ' + p.email + ' ?')) return;
+    const r = await sb.auth.resetPasswordForEmail(p.email, { redirectTo: location.origin + location.pathname }); return toast(r.error ? 'Échec : ' + r.error.message : 'Email de réinitialisation envoyé');
+  }
+  if (act === 'valider' && !p.commune_id && !confirm('Cet utilisateur n’a pas de commune : il ne pourra pas créer d’enquête tant qu’elle n’est pas définie (bouton Modifier). Valider quand même ?')) return;
+  if (act === 'supprimer' && !confirm('Supprimer le compte de ' + fullName(p) + ' ? (archivage : il ne pourra plus se connecter)')) return;
+  const map = { valider: ['active', 'Compte validé'], refuser: ['rejected', 'Inscription refusée'], desactiver: ['inactive', 'Compte désactivé'], reactiver: ['active', 'Compte réactivé'], supprimer: ['deleted', 'Compte supprimé'] };
+  if (await dbUpdate('profiles', { statut: map[act][0] }, 'id', id, map[act][1])) { await refreshProfiles(); render() }
+}
+async function userRole(id, r) {
+  if (!confirm('Changer le rôle de cet utilisateur en « ' + ROLE_LBL[r] + ' » ?')) return render();
+  const patch = { role: r }; if (r === 'enqueteur') patch.permissions = [];
+  if (await dbUpdate('profiles', patch, 'id', id, 'Rôle modifié')) { if (r === 'enqueteur') await sb.from('admin_communes').delete().eq('admin_id', id); await refreshProfiles(); render() } else render();
+}
+function userView(id) {
+  const p = profileById(id), L = db.diagnostics.filter(d => d.meta.enqueteurId === id);
+  openModal(`<h3 style="margin-top:0">${esc(fullName(p))}</h3><div class="detail"><div><small>Email</small>${esc(p.email || '—')}</div><div><small>Téléphone</small>${esc(p.telephone || '—')}</div><div><small>Commune</small>${esc(communeName(p.commune_id) || '—')}</div><div><small>Rôle</small>${esc(ROLE_LBL[p.role])}</div><div><small>Statut</small>${STAT_LBL[p.statut]}</div><div><small>Inscrit le</small>${dmy(p.created_at)}</div><div><small>Validé le</small>${dmy(p.approved_at)}</div>
+  <div><small>Enquêtes</small>${L.length} (${L.filter(isFinal).length} terminées)</div></div><div class="toolbar" style="margin-top:14px"><button class="btn btn-secondary" onclick="closeModal()">Fermer</button></div>`);
+}
+function userEdit(id) {
+  const p = profileById(id);
+  openModal(`<h3 style="margin-top:0">Modifier le profil</h3><form onsubmit="userSave(event,'${id}')"><div class="two"><label>Prénom<input class="input" id="u_prenom" value="${esc(p.prenom || '')}"></label><label>Nom<input class="input" id="u_nom" value="${esc(p.nom || '')}"></label></div>
+  <div class="two"><label>Téléphone<input class="input" id="u_tel" value="${esc(p.telephone || '')}"></label><label>Commune<select class="input" id="u_com">${communesOpts(p.commune_id, '— Aucune —')}</select></label></div>
+  <div class="toolbar"><button class="btn btn-primary">Enregistrer</button><button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button></div></form>`);
+}
+async function userSave(e, id) {
+  e.preventDefault();
+  if (await dbUpdate('profiles', { prenom: $('#u_prenom').value.trim(), nom: $('#u_nom').value.trim(), telephone: $('#u_tel').value.trim(), commune_id: $('#u_com').value || null }, 'id', id, 'Profil modifié')) { closeModal(); await refreshProfiles(); render() }
+}
+
+/* ---------- administrateurs ---------- */
+VIEWS.admins = () => {
+  const admins = ME.profiles.filter(p => p.role === 'admin' && p.statut !== 'deleted'), cands = ME.profiles.filter(p => p.role === 'enqueteur' && p.statut === 'active');
+  $('#content').innerHTML = `<div class="card"><h3 style="margin-top:0">Promouvoir un enquêteur</h3><div class="toolbar"><select class="input" id="promo" style="max-width:340px">${selOpts(cands.map(p => [p.id, fullName(p) + ' — ' + (communeName(p.commune_id) || '—')]), '', 'Choisir un enquêteur actif…')}</select><button class="btn btn-primary" onclick="promote()">Promouvoir administrateur</button></div></div>
+  <div class="section-title"><h2>Administrateurs (${admins.length})</h2></div>` + tableOf(['Administrateur', 'Statut', 'Communes (périmètre)', 'Permissions', 'Actions'], admins.map(p => [
+    `<b>${esc(fullName(p))}</b><br><small class="muted">${esc(p.email || '')}</small>`, statusBadge(p),
+    adminScope(p.id),
+    (p.permissions || []).map(x => esc((PERMS.find(q => q[0] === x) || [0, x])[1])).join(', ') || '<span class="muted">lecture seule</span>',
+    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="adminEdit('${p.id}')">Périmètre et permissions</button>${p.statut === 'active' ? `<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','desactiver')">Désactiver</button>` : `<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','reactiver')">Réactiver</button>`}<button class="btn btn-danger btn-sm" onclick="userRole('${p.id}','enqueteur')">Retirer le rôle</button></div>`]), 'Aucun administrateur.');
+};
+function adminScope(id) {
+  const mine = ME.adminCommunes.filter(a => a.admin_id === id).map(a => a.commune_id), act = ME.communes.filter(c => c.actif);
+  if (act.length && act.every(c => mine.includes(c.id))) return '<span class="badge b-final">Administrateur global · toutes les communes</span>';
+  return mine.map(m => esc(communeName(m))).join(', ') || '<span class="muted">aucune</span>';
+}
+async function promote() { const id = $('#promo').value; if (!id) return toast('Choisissez un enquêteur'); if (await dbUpdate('profiles', { role: 'admin' }, 'id', id, 'Promu administrateur — définissez son périmètre')) { await refreshProfiles(); render(); adminEdit(id) } }
+function adminEdit(id) {
+  const p = profileById(id), mine = ME.adminCommunes.filter(a => a.admin_id === id).map(a => a.commune_id);
+  openModal(`<h3 style="margin-top:0">${esc(fullName(p))}</h3><p class="muted small">Un administrateur voit les communes de son périmètre (toutes les communes pour un administrateur global). Il ne peut jamais modifier les réponses ni les comptes.</p>
+  <h4>Communes <button type="button" class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('input[name=ac]').forEach(x=>x.checked=true)">Toutes les communes</button> <button type="button" class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('input[name=ac]').forEach(x=>x.checked=false)">Aucune</button></h4><div class="checks">${ME.communes.filter(c => c.actif).map(c => `<label><input type="checkbox" name="ac" value="${c.id}" ${mine.includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('') || '<span class="muted">Aucune commune active.</span>'}</div>
+  <h4>Permissions</h4><div class="checks">${PERMS.map(([k, l]) => `<label><input type="checkbox" name="pm" value="${k}" ${(p.permissions || []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
+  <div class="toolbar" style="margin-top:14px"><button class="btn btn-primary" onclick="adminSave('${id}')">Enregistrer</button><button class="btn btn-secondary" onclick="closeModal()">Annuler</button></div>`);
+}
+async function adminSave(id) {
+  const cs = [...document.querySelectorAll('input[name=ac]:checked')].map(x => x.value), pm = [...document.querySelectorAll('input[name=pm]:checked')].map(x => x.value);
+  if (!await dbUpdate('profiles', { permissions: pm }, 'id', id, 'Permissions enregistrées')) return;
+  const d = await sb.from('admin_communes').delete().eq('admin_id', id); if (d.error) return toast('Refusé : ' + d.error.message);
+  if (cs.length) { const i = await sb.from('admin_communes').insert(cs.map(c => ({ admin_id: id, commune_id: c }))); if (i.error) return toast('Refusé : ' + i.error.message) }
+  closeModal(); await refreshProfiles(); render();
+}
+
+/* ---------- communes ---------- */
+VIEWS.communes = () => {
+  $('#content').innerHTML = `<div class="section-title"><h2>Communes (${ME.communes.length})</h2><button class="btn btn-primary" onclick="communeEdit()">＋ Ajouter une commune</button></div>` + tableOf(['Commune', 'Code', 'Département', 'Région', 'Enquêteurs', 'Enquêtes', 'Statut', 'Actions'], ME.communes.map(c => [
+    `<b>${esc(c.nom)}</b>`, esc(c.code || '—'), esc(c.departement || '—'), esc(c.region || '—'), ME.profiles.filter(p => p.commune_id === c.id && p.role === 'enqueteur' && p.statut === 'active').length, countOf(d => d.meta.communeId === c.id),
+    `<span class="badge ${c.actif ? 'b-final' : 'b-warning'}">${c.actif ? 'Active' : 'Inactive'}</span>`,
+    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="communeEdit('${c.id}')">Modifier</button><button class="btn btn-secondary btn-sm" onclick="communeToggle('${c.id}')">${c.actif ? 'Désactiver' : 'Activer'}</button><button class="btn btn-secondary btn-sm" onclick="UF.commune='${c.id}';UF.statut='';nav('users')">Enquêteurs</button></div>`]), 'Aucune commune : ajoutez la première.');
+};
+function communeEdit(id) {
+  const c = ME.communes.find(x => x.id === id) || {};
+  openModal(`<h3 style="margin-top:0">${id ? 'Modifier' : 'Ajouter'} une commune</h3><form onsubmit="communeSave(event,'${id || ''}')"><div class="two"><label>Nom<input class="input" id="c_nom" value="${esc(c.nom || '')}" required></label><label>Code<input class="input" id="c_code" value="${esc(c.code || '')}"></label></div>
+  <div class="two"><label>Département<input class="input" id="c_dep" value="${esc(c.departement || '')}"></label><label>Région<input class="input" id="c_reg" value="${esc(c.region || '')}"></label></div>
+  <div class="toolbar"><button class="btn btn-primary">Enregistrer</button><button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button></div></form>`);
+}
+async function communeSave(e, id) {
+  e.preventDefault(); const o = { nom: $('#c_nom').value.trim(), code: $('#c_code').value.trim() || null, departement: $('#c_dep').value.trim() || null, region: $('#c_reg').value.trim() || null };
+  const r = id ? await sb.from('communes').update(o).eq('id', id).select() : await sb.from('communes').insert(o).select();
+  if (r.error || !r.data.length) return toast('Refusé : ' + denied(r));
+  closeModal(); toast('Commune enregistrée'); await refreshProfiles(); render();
+}
+async function communeToggle(id) { const c = ME.communes.find(x => x.id === id); if (await dbUpdate('communes', { actif: !c.actif }, 'id', id, c.actif ? 'Commune désactivée' : 'Commune activée')) { await refreshProfiles(); render() } }
+
+/* ---------- enquêtes (vue staff) ---------- */
+const EF = { commune: '', agent: '', statut: '', from: '', to: '' };
+const sc = d => { const s = scoreDiag(d); return s.count ? Math.round(s.pct * 100) + ' %' : '—' };
+function enqTable(L) {
+  const sa = role() === 'super_admin', perm = sa || (ME.profile.permissions || []).includes('enquetes.validate');
+  return tableOf(['N°', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'Date', 'Score', 'Actions'], L.map(d => [esc(d.numero), `<b>${esc(d.meta.nom || '—')}</b>`, esc(d.meta.commune || '—'), esc(d.meta.agent || '—'),
+    `<span class="badge ${badgeCls(d.status)}">${d.status}</span>`, dmy(d.meta.date || d.createdAt), sc(d),
+    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="openDiag('${d.id}')">Voir</button>${perm && d.status === 'Définitive' ? `<button class="btn btn-primary btn-sm" onclick="enqStatus('${d.id}','validated')">Valider</button>` : ''}${sa && (d.status === 'Validée' || d.status === 'Définitive') ? `<button class="btn btn-secondary btn-sm" onclick="enqStatus('${d.id}','archived')">Archiver</button>` : ''}</div>`]), 'Aucune enquête.');
+}
+VIEWS.enquetes = () => {
+  const agents = [...new Set(db.diagnostics.map(d => d.meta.agent).filter(Boolean))].sort();
+  const L = db.diagnostics.filter(d => (!EF.commune || d.meta.communeId === EF.commune) && (!EF.agent || d.meta.agent === EF.agent) && (!EF.statut || d.status === EF.statut) && (!EF.from || String(d.createdAt).slice(0, 10) >= EF.from) && (!EF.to || String(d.createdAt).slice(0, 10) <= EF.to));
+  $('#content').innerHTML = `<div class="toolbar filters"><select class="input" onchange="EF.commune=this.value;render()">${communesOpts(EF.commune, 'Toutes les communes')}</select>
+  <select class="input" onchange="EF.agent=this.value;render()">${selOpts(agents.map(a => [a, a]), EF.agent, 'Tous les enquêteurs')}</select>
+  <select class="input" onchange="EF.statut=this.value;render()">${selOpts(['Brouillon', 'Sauvegardée', 'Définitive', 'Validée', 'Archivée'].map(s => [s, s]), EF.statut, 'Tous les statuts')}</select>
+  <input class="input" type="date" value="${EF.from}" onchange="EF.from=this.value;render()" title="Du"><input class="input" type="date" value="${EF.to}" onchange="EF.to=this.value;render()" title="Au"></div>
+  <p class="muted small">${L.length} enquête(s) sur ${db.diagnostics.length}.</p>${enqTable(L)}`;
+};
+async function enqStatus(id, st) {
+  if (st === 'archived' && !confirm('Archiver cette enquête ?')) return;
+  if (await dbUpdate('enquetes', { statut: st }, 'id', id, st === 'validated' ? 'Enquête validée' : 'Enquête archivée')) { await pullAll(); render() }
+}
+
+/* ---------- notifications ---------- */
+VIEWS.notifications = async () => {
+  await loadNotifs();
+  $('#content').innerHTML = `<div class="section-title"><h2>Notifications</h2>${ME.notifs.some(n => !n.lu) ? '<button class="btn btn-secondary" onclick="readAll()">Tout marquer comme lu</button>' : ''}</div>` +
+    (ME.notifs.length ? ME.notifs.map(n => `<div class="card notif ${n.lu ? '' : 'unread'}" onclick="readNotif('${n.id}')"><div><b>${esc(n.titre)}</b><div class="muted">${esc(n.corps || '')}</div></div><small class="muted">${dmyhm(n.created_at)}</small></div>`).join('') : '<div class="empty">Aucune notification.</div>');
+};
+async function readNotif(id) { const n = ME.notifs.find(x => x.id === id); if (!n || n.lu) return; const r = await sb.from('notifications').update({ lu: true }).eq('id', id); if (!r.error) { n.lu = true; updateBell(); render() } }
+async function readAll() { const r = await sb.from('notifications').update({ lu: true }).eq('lu', false); if (!r.error) { ME.notifs.forEach(n => n.lu = true); updateBell(); render() } }
+
+/* ---------- paramètres de la plateforme ---------- */
+VIEWS.platform = async () => {
+  const r = await sb.from('app_settings').select('*'), pf = ((r.data || []).find(x => x.cle === 'plateforme') || {}).valeur || {};
+  $('#content').innerHTML = `<div class="card"><h3 style="margin-top:0">Plateforme</h3><form onsubmit="platformSave(event)"><div class="two"><label>Nom de la plateforme<input class="input" id="p_nom" value="${esc(pf.nom || '')}"></label><label>Email de contact<input class="input" id="p_mail" type="email" value="${esc(pf.contact_email || '')}"></label></div>
+  <label>Téléphone de contact<input class="input" id="p_tel" value="${esc(pf.contact_telephone || '')}"></label><p class="muted small">Ces informations sont publiques (page d’accueil). Les clés secrètes et l’envoi d’emails se configurent côté serveur (Supabase), jamais ici.</p><button class="btn btn-primary">Enregistrer</button></form></div>
+  <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Règles en vigueur</h3><ul class="rpt-ul"><li>Toute inscription crée un compte « en attente » : seul un super admin l’active.</li><li>Un enquêteur ne voit que ses enquêtes et ne crée que dans sa commune.</li><li>Une enquête « Définitive » n’est plus modifiable par son auteur.</li><li>Le dernier super admin ne peut être ni rétrogradé, ni désactivé, ni supprimé.</li></ul></div>`;
+};
+async function platformSave(e) {
+  e.preventDefault(); const v = { nom: $('#p_nom').value.trim() || 'JOKKOO Diagnostic', contact_email: $('#p_mail').value.trim() || null, contact_telephone: $('#p_tel').value.trim() || null };
+  const r = await sb.from('app_settings').upsert({ cle: 'plateforme', valeur: v, publique: true, updated_at: new Date().toISOString(), updated_by: ME.user.id }).select();
+  if (r.error) return toast('Refusé : ' + r.error.message); ME.platform = v; toast('Paramètres enregistrés');
+}
+
+/* ---------- profil ---------- */
+VIEWS.profile = () => {
+  const p = ME.profile;
+  $('#content').innerHTML = `<div class="card"><h3 style="margin-top:0">Mon profil</h3><form onsubmit="profileSave(event)"><div class="two"><label>Prénom<input class="input" id="m_prenom" value="${esc(p.prenom || '')}"></label><label>Nom<input class="input" id="m_nom" value="${esc(p.nom || '')}"></label></div>
+  <div class="two"><label>Téléphone<input class="input" id="m_tel" value="${esc(p.telephone || '')}"></label><label>Email<input class="input" value="${esc(p.email || '')}" disabled></label></div>
+  <div class="two"><label>Commune<input class="input" value="${esc(communeName(p.commune_id) || '—')}" disabled></label><label>Rôle · Statut<input class="input" value="${esc(ROLE_LBL[p.role])} · ${STAT_LBL[p.statut]}" disabled></label></div>
+  <p class="muted small">La commune et le rôle ne peuvent être modifiés que par l’administration.</p><button class="btn btn-primary">Enregistrer</button></form></div>
+  <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Changer le mot de passe</h3><form onsubmit="passSave(event)"><div class="two"><label>Nouveau mot de passe<input class="input" id="w_p1" type="password" minlength="8" autocomplete="new-password" required></label><label>Confirmation<input class="input" id="w_p2" type="password" minlength="8" autocomplete="new-password" required></label></div><button class="btn btn-secondary">Modifier le mot de passe</button></form></div>`;
+};
+async function profileSave(e) {
+  e.preventDefault(); if (ME.offline || !navigator.onLine) return toast('Connexion requise');
+  if (await dbUpdate('profiles', { prenom: $('#m_prenom').value.trim(), nom: $('#m_nom').value.trim(), telephone: $('#m_tel').value.trim() }, 'id', ME.profile.id, 'Profil enregistré')) { await refreshProfiles(); buildNav() }
+}
+async function passSave(e) {
+  e.preventDefault(); if ($('#w_p1').value !== $('#w_p2').value) return toast('Les mots de passe ne correspondent pas');
+  if (ME.offline || !navigator.onLine) return toast('Connexion requise');
+  const r = await sb.auth.updateUser({ password: $('#w_p1').value }); toast(r.error ? 'Échec : ' + r.error.message : 'Mot de passe modifié'); if (!r.error) { $('#w_p1').value = ''; $('#w_p2').value = '' }
+}
