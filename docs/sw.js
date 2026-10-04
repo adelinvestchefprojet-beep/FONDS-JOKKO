@@ -1,5 +1,5 @@
 /* Service worker : application utilisable hors ligne. Les appels à Supabase (API, Auth, Storage) ne sont JAMAIS mis en cache. */
-const CACHE = 'jokkoo-v9';
+const CACHE = 'jokkoo-v10';
 const CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 const ASSETS = ['./', './index.html', './style.css', './config.js', './branding.js', './data.js', './core.js', './app.js', './rapport.js', './admin.js', './auth.js', './archive.js', './manifest.json', './assets/icon-192.png', './assets/icon-512.png', './assets/taatan-hero.jpg', './assets/taatan-logo.jpg', CDN];
 // Un fichier absent ne fait plus échouer toute l'installation
