@@ -203,7 +203,7 @@ function buildNav() {
   const items = MENUS[role()] || [];
   $('#sidebar nav').innerHTML = items.map(([v, ic, l]) => `<button data-view="${v}">${ic} ${l}${v === 'pending' ? '<span class="nav-badge" id="pendingBadge" hidden></span>' : ''}</button>`).join('');
   document.querySelectorAll('#sidebar nav button').forEach(b => b.onclick = () => b.dataset.view === 'new' ? newDiagnostic() : nav(b.dataset.view));
-  const bi = $('#brandImg'); if (bi) bi.src = IMG('icon');
+  const bi = $('#brandImg'); if (bi) bi.src = IMG('logo'); const tl = $('#topLogo'); if (tl) tl.src = IMG('logo');
   $('#newTop').hidden = role() !== 'enqueteur';
   $('#userChip').innerHTML = `<b>${esc(fullName(ME.profile))}</b><span>${esc(ROLE_LBL[role()] || '')}${ME.profile.commune_id ? ' · ' + esc(communeName(ME.profile.commune_id)) : ''}</span>`;
   updatePendingBadge();
