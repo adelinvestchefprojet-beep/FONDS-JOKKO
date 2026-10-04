@@ -5,7 +5,7 @@ function showAuth(inner, wide) {
   $('#appShell').hidden = true; const a = AUTHBOX(); a.hidden = false;
   a.innerHTML = `<div class="auth-split">
     <div class="auth-hero"><img src="${IMG('hero')}" alt="" decoding="async" onerror="this.style.display='none'"><div class="claim"><h2>Collectez, suivez et analysez vos enquêtes de terrain</h2><p>Saisie même sans réseau, synchronisation automatique, rapports par commune.</p></div></div>
-    <div class="auth-panel"><div class="auth-card${wide ? ' wide' : ''}"><img class="auth-logo" src="${IMG('logo')}" alt="TAATAAN" onerror="this.outerHTML='<b class=auth-logo-txt>TAATAAN</b>'"><div class="auth-eyebrow">${esc(pname())}</div>${inner}</div></div></div>`;
+    <div class="auth-panel"><div class="auth-card${wide ? ' wide' : ''}"><div class="auth-badge"><img class="logo-round xl" src="${IMG('logo')}" alt="TAATAAN" onerror="this.outerHTML='<b class=auth-logo-txt>TAATAAN</b>'"></div><div class="auth-eyebrow">${esc(pname())}</div>${inner}</div></div></div>`;
 }
 function togglePw(id, btn) { const i = $('#' + id); i.type = i.type === 'password' ? 'text' : 'password'; btn.textContent = i.type === 'password' ? 'Afficher' : 'Masquer' }
 const pwField = (id, label, auto, extra) => `<label>${label}<div class="pw"><input class="input" id="${id}" type="password" autocomplete="${auto}" ${extra || ''} required><button type="button" class="pw-toggle" onclick="togglePw('${id}',this)">Afficher</button></div></label>`;
