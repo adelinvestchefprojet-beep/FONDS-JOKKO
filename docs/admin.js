@@ -111,15 +111,20 @@ VIEWS.admins = () => {
   $('#content').innerHTML = `<div class="card"><h3 style="margin-top:0">Promouvoir un enquêteur</h3><div class="toolbar"><select class="input" id="promo" style="max-width:340px">${selOpts(cands.map(p => [p.id, fullName(p) + ' — ' + (communeName(p.commune_id) || '—')]), '', 'Choisir un enquêteur actif…')}</select><button class="btn btn-primary" onclick="promote()">Promouvoir administrateur</button></div></div>
   <div class="section-title"><h2>Administrateurs (${admins.length})</h2></div>` + tableOf(['Administrateur', 'Statut', 'Communes (périmètre)', 'Permissions', 'Actions'], admins.map(p => [
     `<b>${esc(fullName(p))}</b><br><small class="muted">${esc(p.email || '')}</small>`, statusBadge(p),
-    ME.adminCommunes.filter(a => a.admin_id === p.id).map(a => esc(communeName(a.commune_id))).join(', ') || '<span class="muted">aucune</span>',
+    adminScope(p.id),
     (p.permissions || []).map(x => esc((PERMS.find(q => q[0] === x) || [0, x])[1])).join(', ') || '<span class="muted">lecture seule</span>',
     `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="adminEdit('${p.id}')">Périmètre et permissions</button>${p.statut === 'active' ? `<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','desactiver')">Désactiver</button>` : `<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','reactiver')">Réactiver</button>`}<button class="btn btn-danger btn-sm" onclick="userRole('${p.id}','enqueteur')">Retirer le rôle</button></div>`]), 'Aucun administrateur.');
 };
+function adminScope(id) {
+  const mine = ME.adminCommunes.filter(a => a.admin_id === id).map(a => a.commune_id), act = ME.communes.filter(c => c.actif);
+  if (act.length && act.every(c => mine.includes(c.id))) return '<span class="badge b-final">Administrateur global · toutes les communes</span>';
+  return mine.map(m => esc(communeName(m))).join(', ') || '<span class="muted">aucune</span>';
+}
 async function promote() { const id = $('#promo').value; if (!id) return toast('Choisissez un enquêteur'); if (await dbUpdate('profiles', { role: 'admin' }, 'id', id, 'Promu administrateur — définissez son périmètre')) { await refreshProfiles(); render(); adminEdit(id) } }
 function adminEdit(id) {
   const p = profileById(id), mine = ME.adminCommunes.filter(a => a.admin_id === id).map(a => a.commune_id);
-  openModal(`<h3 style="margin-top:0">${esc(fullName(p))}</h3><p class="muted small">Un administrateur voit uniquement les communes de son périmètre. Il ne peut jamais modifier les réponses ni les comptes.</p>
-  <h4>Communes</h4><div class="checks">${ME.communes.filter(c => c.actif).map(c => `<label><input type="checkbox" name="ac" value="${c.id}" ${mine.includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('') || '<span class="muted">Aucune commune active.</span>'}</div>
+  openModal(`<h3 style="margin-top:0">${esc(fullName(p))}</h3><p class="muted small">Un administrateur voit les communes de son périmètre (toutes les communes pour un administrateur global). Il ne peut jamais modifier les réponses ni les comptes.</p>
+  <h4>Communes <button type="button" class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('input[name=ac]').forEach(x=>x.checked=true)">Toutes les communes</button> <button type="button" class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('input[name=ac]').forEach(x=>x.checked=false)">Aucune</button></h4><div class="checks">${ME.communes.filter(c => c.actif).map(c => `<label><input type="checkbox" name="ac" value="${c.id}" ${mine.includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('') || '<span class="muted">Aucune commune active.</span>'}</div>
   <h4>Permissions</h4><div class="checks">${PERMS.map(([k, l]) => `<label><input type="checkbox" name="pm" value="${k}" ${(p.permissions || []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
   <div class="toolbar" style="margin-top:14px"><button class="btn btn-primary" onclick="adminSave('${id}')">Enregistrer</button><button class="btn btn-secondary" onclick="closeModal()">Annuler</button></div>`);
 }
