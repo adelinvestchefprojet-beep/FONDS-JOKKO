@@ -32,10 +32,18 @@ function download(name, data, type) { const a = document.createElement('a'); a.h
 const errMsg = e => (e && e.message) || String(e || 'Erreur');
 
 /* ---------- Supabase : configuration publique uniquement ---------- */
+function healUrl(c) { // l'identifiant du projet est inscrit dans la clé anon : on corrige toute URL .supabase.co qui ne lui correspond pas
+  try {
+    if (!c || !c.url || !c.anonKey || !/\.supabase\.co/i.test(c.url)) return c;
+    const ref = JSON.parse(atob(c.anonKey.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).ref;
+    if (ref && !new RegExp('^https?://' + ref + '\\.supabase\\.co', 'i').test(c.url.trim())) return Object.assign({}, c, { url: 'https://' + ref + '.supabase.co' });
+  } catch { }
+  return c;
+}
 function getCfg() {
   const c = window.JOKKOO_CONFIG || {};
-  if (c.url && c.anonKey) return c;
-  try { return JSON.parse(localStorage.getItem('jokkoo_supabase') || 'null') || {} } catch { return {} }
+  if (c.url && c.anonKey) return healUrl(c);
+  try { return healUrl(JSON.parse(localStorage.getItem('jokkoo_supabase') || 'null') || {}) } catch { return {} }
 }
 function isSecretKey(k) { // refuse toute clé privée (service_role / sb_secret_)
   if (!k) return false;
