@@ -49,10 +49,12 @@ async function afterAuth(user) {
 }
 
 async function showSignup() {
-  let cs = []; if (sb && navigator.onLine) { const r = await sb.from('communes').select('id,nom').eq('actif', true).order('nom'); if (!r.error) cs = r.data }
+  let cs = [], why = '';
+  if (!sb || !navigator.onLine) why = 'Connexion internet requise pour charger la liste des communes.';
+  else { try { const r = await sb.from('communes').select('id,nom').eq('actif', true).order('nom'); if (r.error) why = 'Liste des communes indisponible : ' + r.error.message; else { cs = r.data || []; if (!cs.length) why = 'Aucune commune active sur le serveur : contactez l’administrateur.' } } catch (e) { why = 'Liste des communes indisponible : ' + errMsg(e) } }
   showAuth(`<h2>Créer mon compte enquêteur</h2>
   <form onsubmit="doSignup(event)"><div class="two"><label>Prénom<input class="input" id="g_prenom" required></label><label>Nom<input class="input" id="g_nom" required></label></div>
-  <label>Commune<select class="input" id="g_commune" required><option value="">— Choisir —</option>${cs.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}</select></label>
+  <label>Commune<select class="input" id="g_commune" required><option value="">— Choisir —</option>${cs.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}</select>${why ? `<small class="form-msg err" style="display:block;margin-top:6px">${esc(why)}</small>` : ''}</label>
   <div class="two"><label>Email<input class="input" id="g_email" type="email" autocomplete="username" required></label><label>Téléphone<input class="input" id="g_tel" type="tel" required></label></div>
   <div class="two">${pwField('g_pass', 'Mot de passe (8 car. min.)', 'new-password', 'minlength="8"')}${pwField('g_pass2', 'Confirmation', 'new-password', 'minlength="8"')}</div>
   <div id="g_msg" class="form-msg"></div><button class="btn btn-primary" id="g_btn" style="width:100%">Créer mon compte</button></form>
