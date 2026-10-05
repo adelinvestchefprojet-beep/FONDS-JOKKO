@@ -124,7 +124,9 @@ async function refreshProfiles() {
   const ps = await sb.from('profiles').select('*').order('created_at', { ascending: false });
   if (!ps.error) {
     ME.profiles = ps.data;
-    const me = ps.data.find(p => p.user_id === ME.user.id);
+    // Certaines anciennes fiches n'ont pas user_id rempli : dans ce cas l'id du profil
+    // correspond à auth.uid(). On accepte donc les deux formes.
+    const me = ps.data.find(p => (p.user_id || p.id) === ME.user.id);
     if (me) { ME.profile = me; localStorage.setItem('jokkoo_last', JSON.stringify({ uid: ME.user.id, email: ME.user.email, profile: me })) }
   }
   if (isStaff()) { const ac = await sb.from('admin_communes').select('*'); if (!ac.error) ME.adminCommunes = ac.data }
