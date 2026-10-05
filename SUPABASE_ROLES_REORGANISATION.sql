@@ -436,6 +436,7 @@ as $$
 declare
   old_id uuid;
   new_id uuid;
+  target_role text;
 begin
   if not public.is_super_admin() then
     raise exception 'Accès réservé au super administrateur';
@@ -449,13 +450,18 @@ begin
     raise exception 'L ancien et le nouvel administrateur sont identiques';
   end if;
 
-  select id into new_id
+  select id, role::text
+    into new_id, target_role
   from public.profiles
   where id = p_new_admin
   limit 1;
 
   if new_id is null then
     raise exception 'Nouveau profil administrateur introuvable';
+  end if;
+
+  if target_role = 'super_admin' then
+    raise exception 'Un super administrateur ne peut pas être transformé en administrateur central';
   end if;
 
   if p_old_admin is not null then
@@ -473,8 +479,10 @@ begin
       where id = old_id;
     end if;
 
-    delete from public.admin_communes
-    where admin_id = p_old_admin;
+    if to_regclass('public.admin_communes') is not null then
+      execute 'delete from public.admin_communes where admin_id = $1'
+      using p_old_admin;
+    end if;
   end if;
 
   update public.profiles
@@ -486,8 +494,10 @@ begin
       updated_at = now()
   where id = p_new_admin;
 
-  delete from public.admin_communes
-  where admin_id = p_new_admin;
+  if to_regclass('public.admin_communes') is not null then
+    execute 'delete from public.admin_communes where admin_id = $1'
+    using p_new_admin;
+  end if;
 end;
 $$;
 
