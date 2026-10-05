@@ -182,7 +182,7 @@ function adminScope(id) {
   if (act.length && act.every(c => mine.includes(c.id))) return '<span class="badge b-final">Administrateur global · toutes les communes</span>';
   return mine.map(m => esc(communeName(m))).join(', ') || '<span class="muted">aucune</span>';
 }
-async function promote() { const id = $('#promo').value; if (!id) return toast('Choisissez un enquêteur'); if (await dbUpdate('profiles', { role: 'admin' }, 'id', id, 'Promu administrateur — définissez son périmètre')) { await refreshProfiles(); render(); adminEdit(id) } }
+async function promote() { const id = $('#promo').value; if (!id) return toast('Choisissez un enquêteur'); if (await dbUpdate('profiles', { role: 'admin', statut: 'active', commune_id: null, approved_at: new Date().toISOString(), approved_by: ME.user.id }, 'id', id, 'Promu administrateur central — compte activé automatiquement')) { await refreshProfiles(); render(); adminEdit(id) } }
 function adminEdit(id) {
   const p = profileById(id), mine = ME.adminCommunes.filter(a => a.admin_id === id).map(a => a.commune_id);
   openModal(`<h3 style="margin-top:0">${esc(fullName(p))}</h3><p class="muted small">Un administrateur voit les communes de son périmètre (toutes les communes pour un administrateur global). Il ne peut jamais modifier les réponses ni les comptes.</p>
