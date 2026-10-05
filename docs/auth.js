@@ -67,7 +67,30 @@ async function doSignup(e) {
   if (!navigator.onLine) return msgBox('g_msg', 'Une connexion est nécessaire pour créer un compte.');
   $('#g_btn').disabled = true;
   const r = await sb.auth.signUp({ email: v('g_email'), password: $('#g_pass').value, options: { data: { prenom: v('g_prenom'), nom: v('g_nom'), telephone: v('g_tel'), commune_id: v('g_commune') } } });
-  if (r.error) { msgBox('g_msg', authErr(r.error)); $('#g_btn').disabled = false; return }
+  if (r.error) {
+    // Si l'adresse appartient à un ancien compte marqué "deleted",
+    // on réutilise ce compte au lieu de créer un doublon Auth.
+    // La preuve de possession reste l'email de réinitialisation du mot de passe.
+    if (r.error.message === 'User already registered') {
+      const reuse = await sb.rpc('prepare_deleted_email_reuse', {
+        p_email: v('g_email'),
+        p_prenom: v('g_prenom'),
+        p_nom: v('g_nom'),
+        p_telephone: v('g_tel'),
+        p_commune_id: v('g_commune')
+      });
+      if (!reuse.error && reuse.data === true) {
+        const reset = await sb.auth.resetPasswordForEmail(v('g_email'), {
+          redirectTo: location.origin + location.pathname
+        });
+        if (!reset.error) {
+          showAuth(`<h2>Email réutilisable</h2><p>Votre ancien compte supprimé a été réouvert en <b>attente de validation</b>.</p><p class="muted">Un lien vient d’être envoyé à cette adresse pour définir un nouveau mot de passe. Après cela, l’administration devra valider le compte.</p><div class="auth-actions"><button class="btn btn-primary" onclick="showLogin()">Retour à la connexion</button></div>`);
+          return;
+        }
+      }
+    }
+    msgBox('g_msg', authErr(r.error)); $('#g_btn').disabled = false; return
+  }
   if (r.data.session) await sb.auth.signOut(); // aucun accès avant validation
   showAuth(`<h2>Votre demande a été enregistrée</h2><p>Votre compte est actuellement <b>en attente de validation</b> par l’administration.</p><p class="muted">Vous recevrez un email lorsque votre compte sera validé. Si un lien de confirmation vous a été envoyé, ouvrez-le d’abord.</p><div class="auth-actions"><button class="btn btn-primary" onclick="showLogin()">Retour à la connexion</button></div>`);
 }
