@@ -93,20 +93,11 @@ async function userRole(id, r) {
     if (p.role === 'enqueteur') return toast('Le rôle est déjà « Enquêteur ».');
     if (!confirm('Retirer le rôle Administrateur à ' + fullName(p) + ' et le passer en « Enquêteur » ?')) { render(); return; }
 
-    const result = await sb.from('profiles').update({
-      role: 'enqueteur',
-      statut: p.statut === 'deleted' ? 'inactive' : (p.statut || 'active')
-    }).eq('id', id);
-
+    const result = await sb.from('profiles').update({ role: 'enqueteur' }).eq('id', id);
     if (result.error) {
       const e = result.error;
       toast('Rôle non modifié : ' + (e.message || 'erreur Supabase') + (e.details ? ' — ' + e.details : '') + (e.hint ? ' — ' + e.hint : ''));
       await refreshProfiles(); render(); return;
-    }
-
-    const d = await sb.from('admin_communes').delete().eq('admin_id', id);
-    if (d.error && !/does not exist|relation .* does not exist/i.test(d.error.message || '')) {
-      console.warn('admin_communes cleanup:', d.error.message);
     }
     toast('Rôle de ' + fullName(p) + ' changé en « Enquêteur ».');
     await refreshProfiles(); render(); return;
@@ -117,58 +108,47 @@ async function userRole(id, r) {
       return toast('Ce compte est déjà l’Administrateur central.');
     }
 
-    const currentAdmins = ME.profiles.filter(x =>
+    const currentAdmin = ME.profiles.find(x =>
       x.role === 'admin' && x.statut === 'active' && x.id !== id
     );
 
     if (!confirm(
-      'Transférer le rôle ADMIN à ' + fullName(p) + ' ?\n\n' +
-      (currentAdmins.length
-        ? 'L’ancien administrateur actif sera automatiquement repassé Enquêteur.'
-        : 'Le compte cible deviendra Administrateur central.') +
-      '\n\nL’ADMIN central reste sans commune et en lecture seule sur les enquêtes.'
+      'Transférer automatiquement le rôle ADMIN à ' + fullName(p) + ' ?\n\n' +
+      (currentAdmin ? 'L’administrateur actuel (' + fullName(currentAdmin) + ') sera automatiquement repassé Enquêteur.' : 'Le compte cible deviendra Administrateur central.') +
+      '\n\nLa nouvelle ADMIN sera active et sans commune.'
     )) { render(); return; }
 
-    // On libère d'abord le rôle ADMIN existant afin que le trigger
-    // "un seul admin actif" n'empêche pas la promotion de la nouvelle cible.
-    for (const oldAdmin of currentAdmins) {
-      const demote = await sb.from('profiles')
-        .update({ role: 'enqueteur' })
-        .eq('id', oldAdmin.id);
+    // Transaction serveur : un seul appel, sans manipulation manuelle.
+    // La fonction PostgreSQL vérifie le SUPER ADMIN, libère l'ancien ADMIN,
+    // active le nouveau, supprime son périmètre admin_communes et met commune_id à NULL.
+    const rpc = await sb.rpc('transfer_central_admin', {
+      p_old_admin: currentAdmin ? currentAdmin.id : null,
+      p_new_admin: id
+    });
 
-      if (demote.error) {
-        const e = demote.error;
-        toast('Transfert arrêté : impossible de retirer ADMIN à ' + fullName(oldAdmin) + ' : ' +
-          (e.message || 'erreur Supabase') + (e.details ? ' — ' + e.details : '') +
-          (e.hint ? ' — ' + e.hint : ''));
+    if (rpc.error) {
+      // Compatibilité si la fonction SQL n'a pas encore été installée.
+      // On conserve le transfert séquentiel comme secours.
+      console.warn('transfer_central_admin RPC:', rpc.error.message);
+      if (currentAdmin) {
+        const demote = await sb.from('profiles').update({ role: 'enqueteur' }).eq('id', currentAdmin.id);
+        if (demote.error) {
+          toast('Transfert impossible : ' + demote.error.message);
+          await refreshProfiles(); render(); return;
+        }
+      }
+      const promote = await sb.from('profiles').update({
+        role: 'admin', statut: 'active', commune_id: null
+      }).eq('id', id);
+      if (promote.error) {
+        toast('Promotion refusée : ' + promote.error.message);
         await refreshProfiles(); render(); return;
       }
-
-      const cleanup = await sb.from('admin_communes').delete().eq('admin_id', oldAdmin.id);
-      if (cleanup.error && !/does not exist|relation .* does not exist/i.test(cleanup.error.message || '')) {
-        console.warn('admin_communes cleanup:', cleanup.error.message);
-      }
     }
 
-    const promote = await sb.from('profiles')
-      .update({ role: 'admin', statut: 'active', commune_id: null })
-      .eq('id', id);
-
-    if (promote.error) {
-      const e = promote.error;
-      toast('Promotion refusée : ' + (e.message || 'erreur Supabase') + (e.details ? ' — ' + e.details : '') +
-        (e.hint ? ' — ' + e.hint : ''));
-      await refreshProfiles(); render(); return;
-    }
-
-    const cleanupTarget = await sb.from('admin_communes').delete().eq('admin_id', id);
-    if (cleanupTarget.error && !/does not exist|relation .* does not exist/i.test(cleanupTarget.error.message || '')) {
-      console.warn('admin_communes cleanup:', cleanupTarget.error.message);
-    }
-
-    toast('ADMIN transféré à ' + fullName(p) + '.');
     await refreshProfiles();
     render();
+    toast('ADMIN transféré automatiquement à ' + fullName(p) + '.');
   }
 }
 function userView(id) {
