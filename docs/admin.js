@@ -91,11 +91,14 @@ async function userRole(id, r) {
   const label = r === 'admin' ? 'Administrateur' : 'Enquêteur';
   if (p.role === r) return toast('Le rôle est déjà « ' + label + ' ».');
   if (!confirm('Changer le rôle de ' + fullName(p) + ' en « ' + label + ' » ?')) { render(); return; }
-  const patch = { role: r };
-  if (r === 'enqueteur') patch.permissions = [];
-  const result = await sb.from('profiles').update(patch).eq('id', id).select('id,role,statut,commune_id');
-  if (result.error) { toast('Rôle non modifié : ' + result.error.message); await refreshProfiles(); render(); return; }
-  if (!result.data || !result.data.length) { toast('Rôle non modifié : opération refusée.'); await refreshProfiles(); render(); return; }
+  // La table profiles ne possède pas de colonne "permissions" dans le schéma JOKKOO.
+  // Le rôle est géré uniquement par la colonne role et les droits réels par RLS.
+  const result = await sb.from('profiles').update({ role: r }).eq('id', id);
+  if (result.error) {
+    const e = result.error;
+    toast('Rôle non modifié : ' + (e.message || 'erreur Supabase') + (e.details ? ' — ' + e.details : '') + (e.hint ? ' — ' + e.hint : ''));
+    await refreshProfiles(); render(); return;
+  }
   if (r === 'enqueteur') {
     const d = await sb.from('admin_communes').delete().eq('admin_id', id);
     if (d.error) console.warn('admin_communes cleanup:', d.error.message);
