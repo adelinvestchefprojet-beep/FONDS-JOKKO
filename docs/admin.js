@@ -32,9 +32,9 @@ async function loadRecentAudit() {
 const actorName = uidv => { const p = ME.profiles.find(x => x.user_id === uidv); return p ? fullName(p) : (uidv ? 'Utilisateur' : 'Système / inscription') };
 
 function dashAdmin() {
-  const ds = db.diagnostics, mine = ME.adminCommunes.filter(a => a.admin_id === ME.profile.id).map(a => a.commune_id), pr = ME.profiles.filter(p => p.role === 'enqueteur');
-  $('#content').innerHTML = `<div class="card hello"><div><h2 style="margin:0">Espace administrateur</h2><div class="muted">Périmètre : ${mine.map(communeName).filter(Boolean).map(esc).join(', ') || 'aucune commune attribuée pour le moment'}</div></div></div>
-  ${kpiBlock('Mon périmètre', [[mine.length, 'Communes'], [pr.length, 'Enquêteurs'], [ds.length, 'Enquêtes'], [countOf(d => since(d.createdAt, 7)), 'Cette semaine'], [countOf(d => !isFinal(d)), 'En cours', 'var(--gold)'], [countOf(d => d.status === 'Définitive'), 'À valider', 'var(--red)']])}
+  const ds = db.diagnostics, pr = ME.profiles.filter(p => p.role === 'enqueteur');
+  $('#content').innerHTML = `<div class="card hello"><div><h2 style="margin:0">Espace administrateur</h2><div class="muted">Périmètre : toutes les communes et tous les enquêteurs. Consultation uniquement.</div></div></div>
+  ${kpiBlock('Vue centrale', [[ME.communes.length, 'Communes'], [pr.length, 'Enquêteurs'], [ds.length, 'Enquêtes'], [countOf(d => since(d.createdAt, 7)), 'Cette semaine'], [countOf(d => !isFinal(d)), 'En cours', 'var(--gold)'], [countOf(d => d.status === 'Définitive'), 'Définitives']])}
   <div class="section-title"><h2>Dernières enquêtes</h2></div>${enqTable(ds.slice(0, 8))}`;
 }
 
@@ -49,7 +49,7 @@ function userRows(list) {
       if (p.statut === 'pending') acts.push(`<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','valider')">Valider</button><button class="btn btn-danger btn-sm" onclick="userAct('${p.id}','refuser')">Refuser</button>`);
       if (p.statut === 'active') acts.push(`<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','desactiver')">Désactiver</button>`);
       if (p.statut === 'inactive' || p.statut === 'rejected') acts.push(`<button class="btn btn-primary btn-sm" onclick="userAct('${p.id}','reactiver')">${p.statut === 'rejected' ? 'Activer' : 'Réactiver'}</button>`);
-      if (p.role !== 'super_admin') acts.push(`<select class="input sm" onchange="userRole('${p.id}',this.value)" title="Rôle">${selOpts([['enqueteur', 'Enquêteur'], ['admin', 'Administrateur']], p.role)}</select>`);
+      if (p.role !== 'super_admin') acts.push(`<select class="input sm role-select" onchange="userRole('${p.id}', this.value)" title="Changer le rôle"><option value="">Changer le rôle…</option><option value="enqueteur" ${p.role === 'enqueteur' ? 'selected' : ''}>Enquêteur</option><option value="admin" ${p.role === 'admin' ? 'selected' : ''}>Administrateur</option></select>`);
       acts.push(`<button class="btn btn-secondary btn-sm" onclick="userAct('${p.id}','reset')">Réinitialiser l’accès</button><button class="btn btn-danger btn-sm" onclick="userAct('${p.id}','supprimer')">Supprimer</button>`);
     }
     return [`<b>${esc(fullName(p))}</b>`, esc(communeName(p.commune_id) || '—'), esc(p.email || ''), esc(p.telephone || ''), esc(ROLE_LBL[p.role] || p.role), statusBadge(p), dmy(p.created_at), `<div class="acts">${acts.join('')}</div>`];
@@ -85,9 +85,24 @@ async function userAct(id, act) {
   if (await dbUpdate('profiles', { statut: map[act][0] }, 'id', id, map[act][1])) { await refreshProfiles(); render() }
 }
 async function userRole(id, r) {
-  if (!confirm('Changer le rôle de cet utilisateur en « ' + ROLE_LBL[r] + ' » ?')) return render();
-  const patch = { role: r }; if (r === 'enqueteur') patch.permissions = [];
-  if (await dbUpdate('profiles', patch, 'id', id, 'Rôle modifié')) { if (r === 'enqueteur') await sb.from('admin_communes').delete().eq('admin_id', id); await refreshProfiles(); render() } else render();
+  if (!r || !['enqueteur','admin'].includes(r)) return;
+  const p = profileById(id);
+  if (!p || p.id === ME.profile.id || p.role === 'super_admin') return toast('Ce compte ne peut pas être changé ici.');
+  const label = r === 'admin' ? 'Administrateur' : 'Enquêteur';
+  if (p.role === r) return toast('Le rôle est déjà « ' + label + ' ».');
+  if (!confirm('Changer le rôle de ' + fullName(p) + ' en « ' + label + ' » ?')) { render(); return; }
+  const patch = { role: r };
+  if (r === 'enqueteur') patch.permissions = [];
+  const result = await sb.from('profiles').update(patch).eq('id', id).select('id,role,statut,commune_id');
+  if (result.error) { toast('Rôle non modifié : ' + result.error.message); await refreshProfiles(); render(); return; }
+  if (!result.data || !result.data.length) { toast('Rôle non modifié : opération refusée.'); await refreshProfiles(); render(); return; }
+  if (r === 'enqueteur') {
+    const d = await sb.from('admin_communes').delete().eq('admin_id', id);
+    if (d.error) console.warn('admin_communes cleanup:', d.error.message);
+  }
+  toast('Rôle changé en « ' + label + ' ».');
+  await refreshProfiles();
+  render();
 }
 function userView(id) {
   const p = profileById(id), L = db.diagnostics.filter(d => d.meta.enqueteurId === id);
@@ -161,10 +176,10 @@ async function communeToggle(id) { const c = ME.communes.find(x => x.id === id);
 const EF = { commune: '', agent: '', statut: '', from: '', to: '' };
 const sc = d => { const s = scoreDiag(d); return s.count ? Math.round(s.pct * 100) + ' %' : '—' };
 function enqTable(L) {
-  const sa = role() === 'super_admin', perm = sa || (ME.profile.permissions || []).includes('enquetes.validate');
+  const sa = role() === 'super_admin';
   return tableOf(['N°', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'Date', 'Score', 'Actions'], L.map(d => [esc(d.numero), `<b>${esc(d.meta.nom || '—')}</b>`, esc(d.meta.commune || '—'), esc(d.meta.agent || '—'),
     `<span class="badge ${badgeCls(d.status)}">${d.status}</span>`, dmy(d.meta.date || d.createdAt), sc(d),
-    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="openDiag('${d.id}')">Voir</button>${perm && d.status === 'Définitive' ? `<button class="btn btn-primary btn-sm" onclick="enqStatus('${d.id}','validated')">Valider</button>` : ''}${sa && (d.status === 'Validée' || d.status === 'Définitive') ? `<button class="btn btn-secondary btn-sm" onclick="enqStatus('${d.id}','archived')">Archiver</button>` : ''}</div>`]), 'Aucune enquête.');
+    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="openDiag('${d.id}')">Voir</button>${sa && d.status === 'Définitive' ? `<button class="btn btn-primary btn-sm" onclick="enqStatus('${d.id}','validated')">Valider</button>` : ''}${sa && (d.status === 'Validée' || d.status === 'Définitive') ? `<button class="btn btn-secondary btn-sm" onclick="enqStatus('${d.id}','archived')">Archiver</button>` : ''}</div>`]), 'Aucune enquête.');
 }
 VIEWS.enquetes = () => {
   const agents = [...new Set(db.diagnostics.map(d => d.meta.agent).filter(Boolean))].sort();
