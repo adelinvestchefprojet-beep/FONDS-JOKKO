@@ -68,25 +68,45 @@ async function doSignup(e) {
   $('#g_btn').disabled = true;
   const r = await sb.auth.signUp({ email: v('g_email'), password: $('#g_pass').value, options: { data: { prenom: v('g_prenom'), nom: v('g_nom'), telephone: v('g_tel'), commune_id: v('g_commune') } } });
   if (r.error) {
-    // Si l'adresse appartient à un ancien compte marqué "deleted",
-    // on réutilise ce compte au lieu de créer un doublon Auth.
-    // La preuve de possession reste l'email de réinitialisation du mot de passe.
+    // Supabase Auth conserve l'identité même lorsque le profil FONDS-JOKKOO
+    // a été archivé en "deleted". Dans ce cas, on ne crée pas un doublon :
+    // on envoie d'abord un lien de réinitialisation, puis on réactive
+    // uniquement le profil supprimé via le RPC sécurisé.
     if (r.error.message === 'User already registered') {
-      const reuse = await sb.rpc('prepare_deleted_email_reuse', {
-        p_email: v('g_email'),
-        p_prenom: v('g_prenom'),
-        p_nom: v('g_nom'),
-        p_telephone: v('g_tel'),
-        p_commune_id: v('g_commune')
+      const email = v('g_email');
+      const reset = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo: location.origin + location.pathname
       });
-      if (!reuse.error && reuse.data === true) {
-        const reset = await sb.auth.resetPasswordForEmail(v('g_email'), {
-          redirectTo: location.origin + location.pathname
+
+      if (!reset.error) {
+        const reuse = await sb.rpc('prepare_deleted_email_reuse', {
+          p_email: email,
+          p_prenom: v('g_prenom'),
+          p_nom: v('g_nom'),
+          p_telephone: v('g_tel'),
+          p_commune_id: v('g_commune')
         });
-        if (!reset.error) {
-          showAuth(`<h2>Email réutilisable</h2><p>Votre ancien compte supprimé a été réouvert en <b>attente de validation</b>.</p><p class="muted">Un lien vient d’être envoyé à cette adresse pour définir un nouveau mot de passe. Après cela, l’administration devra valider le compte.</p><div class="auth-actions"><button class="btn btn-primary" onclick="showLogin()">Retour à la connexion</button></div>`);
+
+        if (!reuse.error && reuse.data === true) {
+          showAuth(`<h2>Email réutilisable</h2>
+          <p>Un ancien compte associé à cette adresse avait été supprimé de FONDS-JOKKOO.</p>
+          <p>Il a été remis en <b>attente de validation</b>.</p>
+          <p class="muted">Un lien vient d’être envoyé à cette adresse pour définir un nouveau mot de passe. Après cela, l’administration devra valider le compte.</p>
+          <div class="auth-actions"><button class="btn btn-primary" onclick="showLogin()">Retour à la connexion</button></div>`);
           return;
         }
+
+        // Le mot de passe peut avoir été réinitialisé pour un compte Auth
+        // qui n'est pas un ancien profil supprimé. On ne modifie rien dans
+        // ce cas et on explique clairement la situation.
+        if (reuse.error) {
+          console.warn('Réutilisation email : RPC indisponible ou refusé', reuse.error);
+          msgBox('g_msg', 'Cet email existe dans Supabase, mais son ancien profil supprimé n’a pas pu être retrouvé. Vérifiez que SUPABASE_REUSE_DELETED_EMAIL.sql a été exécuté dans Supabase.');
+        } else {
+          msgBox('g_msg', 'Cet email est déjà utilisé par un compte actif. Utilisez « J’ai déjà un compte » ou un autre email.');
+        }
+        $('#g_btn').disabled = false;
+        return;
       }
     }
     msgBox('g_msg', authErr(r.error)); $('#g_btn').disabled = false; return
