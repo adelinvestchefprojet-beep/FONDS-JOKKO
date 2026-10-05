@@ -415,3 +415,83 @@ commit;
 -- select policyname, cmd, roles from pg_policies
 -- where schemaname='public' and tablename='enquetes'
 -- order by policyname;
+
+
+-- ============================================================
+-- TRANSFERT AUTOMATIQUE DE L'ADMIN CENTRAL
+-- ============================================================
+-- Un seul appel depuis l'application suffit pour changer d'ADMIN.
+-- L'ancien ADMIN actif devient enquêteur, le nouveau devient ADMIN
+-- central actif, sans commune et sans périmètre admin_communes.
+-- Aucune donnée d'enquête n'est supprimée.
+create or replace function public.transfer_central_admin(
+  p_old_admin uuid,
+  p_new_admin uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_id uuid;
+  new_id uuid;
+begin
+  if not public.is_super_admin() then
+    raise exception 'Accès réservé au super administrateur';
+  end if;
+
+  if p_new_admin is null then
+    raise exception 'Le nouvel administrateur est obligatoire';
+  end if;
+
+  if p_old_admin is not null and p_old_admin = p_new_admin then
+    raise exception 'L ancien et le nouvel administrateur sont identiques';
+  end if;
+
+  select id into new_id
+  from public.profiles
+  where id = p_new_admin
+  limit 1;
+
+  if new_id is null then
+    raise exception 'Nouveau profil administrateur introuvable';
+  end if;
+
+  if p_old_admin is not null then
+    select id into old_id
+    from public.profiles
+    where id = p_old_admin
+      and role::text = 'admin'
+      and statut::text = 'active'
+    limit 1;
+
+    if old_id is not null then
+      update public.profiles
+      set role = 'enqueteur',
+          updated_at = now()
+      where id = old_id;
+    end if;
+
+    delete from public.admin_communes
+    where admin_id = p_old_admin;
+  end if;
+
+  update public.profiles
+  set role = 'admin',
+      statut = 'active',
+      commune_id = null,
+      approved_at = coalesce(approved_at, now()),
+      approved_by = auth.uid(),
+      updated_at = now()
+  where id = p_new_admin;
+
+  delete from public.admin_communes
+  where admin_id = p_new_admin;
+end;
+$$;
+
+revoke all on function public.transfer_central_admin(uuid, uuid) from public;
+grant execute on function public.transfer_central_admin(uuid, uuid) to authenticated;
+
+commit;
