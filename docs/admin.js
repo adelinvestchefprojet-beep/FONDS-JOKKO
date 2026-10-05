@@ -3,9 +3,17 @@
 const PERMS = [['enquetes.validate', 'Valider les enquêtes de son périmètre']];
 const denied = r => (r.error ? r.error.message : 'droits insuffisants');
 async function dbUpdate(table, patch, col, val, okMsg) {
-  const r = await sb.from(table).update(patch).eq(col, val).select();
-  if (r.error || !r.data.length) { toast('Refusé : ' + denied(r)); return false }
-  toast(okMsg || 'Enregistré'); return true;
+  // Ne pas demander la représentation après UPDATE.
+  // Avec RLS/PostgREST, .select() ajoutait ?select=* et pouvait provoquer
+  // des HTTP 400 même lorsque l'UPDATE lui-même était autorisé.
+  const r = await sb.from(table).update(patch).eq(col, val);
+  if (r.error) {
+    const e = r.error;
+    toast('Refusé : ' + (e.message || 'erreur Supabase') + (e.details ? ' — ' + e.details : '') + (e.hint ? ' — ' + e.hint : ''));
+    return false;
+  }
+  toast(okMsg || 'Enregistré');
+  return true;
 }
 const selOpts = (arr, cur, blank) => (blank ? `<option value="">${blank}</option>` : '') + arr.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('');
 const communesOpts = (cur, blank) => selOpts(ME.communes.map(c => [c.id, c.nom]), cur, blank);
