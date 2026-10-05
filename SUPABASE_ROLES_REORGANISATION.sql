@@ -23,7 +23,7 @@ set search_path = public
 as $$
   select p.role::text
   from public.profiles p
-  where p.user_id = auth.uid()
+  where coalesce(p.user_id, p.id) = auth.uid()
   limit 1
 $$;
 
@@ -34,7 +34,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
       and p.role::text = 'super_admin'
       and p.statut::text = 'active'
   )
@@ -47,7 +47,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
       and p.role::text in ('admin','super_admin')
       and p.statut::text = 'active'
   )
@@ -60,7 +60,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
       and p.role::text = 'enqueteur'
       and p.statut::text = 'active'
   )
@@ -150,7 +150,7 @@ using (
   public.is_active_enqueteur()
   and enqueteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
 );
@@ -162,12 +162,12 @@ with check (
   public.is_active_enqueteur()
   and enqueteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   and commune_id = (
     select p.commune_id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
 );
@@ -179,7 +179,7 @@ using (
   public.is_active_enqueteur()
   and enqueteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
 )
@@ -187,12 +187,12 @@ with check (
   public.is_active_enqueteur()
   and enqueteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   and commune_id = (
     select p.commune_id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
 );
@@ -205,7 +205,7 @@ using (
   public.is_active_enqueteur()
   and enqueteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
 );
@@ -238,7 +238,7 @@ with check (
   public.is_admin()
   and auteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   and exists (
@@ -257,7 +257,7 @@ using (
     where e.id = enquete_id
       and e.enqueteur_id = (
         select p.id from public.profiles p
-        where p.user_id = auth.uid()
+        where coalesce(p.user_id, p.id) = auth.uid()
         limit 1
       )
   )
@@ -270,7 +270,7 @@ with check (
   public.is_active_enqueteur()
   and auteur_id = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   and exists (
@@ -278,7 +278,7 @@ with check (
     where e.id = enquete_id
       and e.enqueteur_id = (
         select p.id from public.profiles p
-        where p.user_id = auth.uid()
+        where coalesce(p.user_id, p.id) = auth.uid()
         limit 1
       )
   )
@@ -294,7 +294,7 @@ using (
     where e.id = enquete_id
       and e.enqueteur_id = (
         select p.id from public.profiles p
-        where p.user_id = auth.uid()
+        where coalesce(p.user_id, p.id) = auth.uid()
         limit 1
       )
   )
@@ -306,7 +306,7 @@ with check (
     where e.id = enquete_id
       and e.enqueteur_id = (
         select p.id from public.profiles p
-        where p.user_id = auth.uid()
+        where coalesce(p.user_id, p.id) = auth.uid()
         limit 1
       )
   )
@@ -333,7 +333,7 @@ on public.notifications for select to authenticated
 using (
   for_user = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   or for_user = auth.uid()
@@ -345,7 +345,7 @@ on public.notifications for update to authenticated
 using (
   for_user = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   or for_user = auth.uid()
@@ -353,7 +353,7 @@ using (
 with check (
   for_user = (
     select p.id from public.profiles p
-    where p.user_id = auth.uid()
+    where coalesce(p.user_id, p.id) = auth.uid()
     limit 1
   )
   or for_user = auth.uid()
