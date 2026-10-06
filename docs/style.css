@@ -164,3 +164,26 @@ img.brand-mark{width:54px;height:54px}
 @media(max-width:900px){.auth-badge{margin:-62px 0 14px;position:relative;z-index:2}.logo-round.xl{width:104px;height:104px}}
 @media(max-width:780px){.tb-title{gap:16px}.tb-logo{width:38px;height:38px;margin-left:4px}.tb-title .eyebrow{display:none}}
 @media print{.logo-round,img.brand-mark{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* ===== Correctif écran de connexion (mobile) : tout visible sans défilement, logo centré ===== */
+.auth-root,.auth-split{min-height:100vh;min-height:100dvh}
+.auth-badge{width:100%}
+.auth-badge .logo-round{margin-left:auto;margin-right:auto}
+@media(max-width:900px){
+  .auth-split{grid-template-rows:auto 1fr}
+  .auth-hero{height:clamp(110px,22dvh,190px)}
+  .auth-hero img{width:100%;height:100%;object-fit:cover;object-position:50% 0;transform:scale(1.42);transform-origin:100% 4%}
+  .auth-panel{margin-top:-18px;padding:0 20px max(16px,env(safe-area-inset-bottom));align-items:flex-start}
+  .auth-badge{margin:-40px 0 6px}
+  .logo-round.xl{width:76px;height:76px;padding:6px}
+  .auth-eyebrow{margin:10px 0 6px;text-align:center}
+  .auth-card h2{font-size:22px;margin:0 0 2px;text-align:center}
+  .auth-sub{display:none}
+  .auth-card label{margin-top:8px}
+  .auth-card .input{padding:10px 12px}
+  .auth-card .btn{margin-top:10px;min-height:44px}
+  .auth-links{margin-top:6px}
+  .form-msg{min-height:0;margin-top:4px}
+  .auth-sep{margin-top:12px}
+  .auth-foot{margin-top:8px;font-size:11px;line-height:1.35}
+}
