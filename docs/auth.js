@@ -101,7 +101,7 @@ async function doSignup(e) {
         // ce cas et on explique clairement la situation.
         if (reuse.error) {
           console.warn('Réutilisation email : RPC indisponible ou refusé', reuse.error);
-          msgBox('g_msg', 'Cet email existe dans Supabase, mais son ancien profil supprimé n’a pas pu être retrouvé. Vérifiez que SUPABASE_REUSE_DELETED_EMAIL.sql a été exécuté dans Supabase.');
+          msgBox('g_msg', 'Cet email existe dans Supabase, mais son ancien profil supprimé n’a pas pu être retrouvé. Vérifiez que SUPABASE_REUSE_DELETED_EMAIL.sql a été exécuté dans Supabase. Détail technique : ' + (reuse.error.message || reuse.error.code || 'inconnu'));
         } else {
           msgBox('g_msg', 'Cet email est déjà utilisé par un compte actif. Utilisez « J’ai déjà un compte » ou un autre email.');
         }
