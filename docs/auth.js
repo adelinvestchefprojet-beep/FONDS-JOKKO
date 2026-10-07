@@ -37,7 +37,7 @@ function showLogin(msg) {
 async function doLogin(e) {
   e.preventDefault(); const b = $('#l_btn'); b.disabled = true;
   if (!navigator.onLine) { msgBox('l_msg', 'Connexion impossible hors ligne la première fois.'); b.disabled = false; return }
-  const r = await sb.auth.signInWithPassword({ email: $('#l_email').value.trim(), password: $('#l_pass').value });
+  let r; try { r = await sb.auth.signInWithPassword({ email: $('#l_email').value.trim(), password: $('#l_pass').value }) } catch (x) { msgBox('l_msg', 'Réseau instable : réessayez dans un instant.'); b.disabled = false; return }
   if (r.error) { msgBox('l_msg', authErr(r.error)); b.disabled = false; return }
   ME.offline = false; await afterAuth(r.data.user);
 }
@@ -180,7 +180,7 @@ async function revalidate() { // retour du réseau après un mode hors ligne : o
 async function logout(skipConfirm) {
   if (!skipConfirm && ME.profile && pendingCount() && !confirm(pendingCount() + ' fiche(s) ne sont pas encore envoyées : elles resteront sur cet appareil. Se déconnecter ?')) return;
   await flushDB(); clearInterval(startSession._t);
-  try { await sb.auth.signOut() } catch { }
+  try { await sb.auth.signOut({ scope: 'local' }) } catch { }
   localStorage.removeItem('jokkoo_last'); ME.user = null; ME.profile = null; ME.profiles = []; ME.notifs = []; db = { diagnostics: [] }; currentId = null;
   showLanding();
 }
