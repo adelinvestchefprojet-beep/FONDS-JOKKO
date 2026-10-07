@@ -178,7 +178,7 @@ async function msgSendAdmin(ev) {
 
 /* ---------- page Notifications : affiche aussi le CONTENU des messages ---------- */
 const N_TITRE = ['titre', 'title', 'sujet', 'objet'], N_CORPS = ['corps', 'message', 'contenu', 'body', 'texte', 'description'];
-const N_SKIP = new Set(['id', 'for_user', 'user_id', 'lu', 'created_at', 'updated_at', 'read_at', ...N_TITRE]);
+const N_SKIP = new Set(['id', 'for_user', 'for_role', 'user_id', 'lu', 'created_at', 'updated_at', 'read_at', ...N_TITRE]);
 const nFirst = (n, keys) => { for (const k of keys) if (n[k]) return String(n[k]); return '' };
 function nExtra(n) { // affiche tout ce que la ligne contient (type, données JSON…) quand les colonnes habituelles sont vides
   const out = [];
@@ -188,8 +188,18 @@ function nExtra(n) { // affiche tout ce que la ligne contient (type, données JS
   }
   return out.join(' · ');
 }
-const nTitre = n => nFirst(n, N_TITRE) || n.type || 'Notification';
-const nCorps = n => nFirst(n, N_CORPS) || nExtra(n);
+const N_TYPES = { new_signup: 'Nouvelle inscription' };
+const nPayload = n => { let p = n.payload; if (typeof p === 'string') { try { p = JSON.parse(p) } catch { p = null } } return p && typeof p === 'object' ? p : null };
+const nTitre = n => nFirst(n, N_TITRE) || N_TYPES[n.type] || n.type || 'Notification';
+const nCorps = n => {
+  const direct = nFirst(n, N_CORPS); if (direct) return direct;
+  const p = nPayload(n);
+  if (n.type === 'new_signup' && p) return [p.nom, p.email].filter(Boolean).join(' · ') + ' — compte en attente de validation';
+  return nExtra(n);
+};
+// un clic sur « Nouvelle inscription » ouvre directement la liste des inscriptions à valider
+const _readNotif = readNotif;
+readNotif = async function (id) { const n = ME.notifs.find(x => x.id === id); await _readNotif(id); if (n && n.type === 'new_signup' && role() === 'super_admin') nav('pending') };
 const _vNotif = VIEWS.notifications;
 VIEWS.notifications = async () => {
   await _vNotif();
