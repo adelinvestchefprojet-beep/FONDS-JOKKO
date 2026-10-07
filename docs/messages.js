@@ -12,7 +12,8 @@ const waText = p => 'Bonjour ' + (p && p.prenom ? p.prenom : '') + ', vous avez 
 /* ---------- menu, titres ---------- */
 ['enqueteur', 'admin', 'super_admin'].forEach(r => { const a = MENUS[r], i = a.findIndex(m => m[0] === 'notifications'); a.splice(i < 0 ? a.length : i, 0, ['messages', '✉', 'Messagerie']) });
 TITLES.messages = 'Messagerie';
-function msgBell() { return MSG.unread ? 'messages' : 'notifications' }
+MENUS.enqueteur = MENUS.enqueteur.filter(m => m[0] !== 'notifications');
+function msgBell() { return role() === 'enqueteur' || MSG.unread ? 'messages' : 'notifications' }
 
 /* ---------- chargement ---------- */
 async function loadMessages() {
@@ -29,7 +30,7 @@ async function loadMessages() {
 const _loadNotifs = loadNotifs;
 loadNotifs = async function () { await _loadNotifs(); await loadMessages() };
 updateBell = function () {
-  const n = ME.notifs.filter(x => !x.lu).length + MSG.unread, b = $('#bellBadge');
+  const n = (role() === 'enqueteur' ? 0 : ME.notifs.filter(x => !x.lu).length) + MSG.unread, b = $('#bellBadge');
   if (b) { b.textContent = n; b.hidden = !n }
   const nb = $('#msgBadge'); if (nb) { nb.textContent = MSG.unread; nb.hidden = !MSG.unread }
 };
@@ -203,11 +204,7 @@ readNotif = async function (id) { const n = ME.notifs.find(x => x.id === id); aw
 const _vNotif = VIEWS.notifications;
 VIEWS.notifications = async () => {
   await _vNotif();
-  if (Date.now() - MSG.t > 15000) await loadMessages();
-  const T = msgThreads().slice(0, 15); if (!T.length || view !== 'notifications') return;
-  const html = `<div class="section-title"><h2>Messages</h2><button class="btn btn-secondary" onclick="nav('messages')">Ouvrir la messagerie</button></div>` + T.map(t => {
-    const u = msgUnreadIn(t).length, l = t.last, txt = l.corps.length > 400 ? l.corps.slice(0, 400) + '…' : l.corps;
-    return `<div class="card notif ${u ? 'unread' : ''}" onclick="msgOpen('${t.id}')"><div><b>${esc(msgTitle(t))}</b><div class="muted small">${esc(l.expediteur_id === msgMe() ? 'Moi' : (l.expediteur_nom || 'Administration'))}</div><div>${msgHtml(txt)}</div></div><small class="muted">${dmyhm(l.created_at)}</small></div>`;
-  }).join('');
-  $('#content').insertAdjacentHTML('afterbegin', html);
+  if (view !== 'notifications') return;
+  const h = $('#content .section-title'); // phrase d'explication sous le titre
+  if (h) h.insertAdjacentHTML('afterend', '<p class="muted small">Alertes automatiques du système (par exemple : nouvelles inscriptions à valider). Les échanges avec les enquêteurs se trouvent dans la <a href="#" onclick="nav(\'messages\');return false">Messagerie</a>.</p>');
 };
