@@ -254,7 +254,7 @@ async function enqStatus(id, st) {
 VIEWS.notifications = async () => {
   await loadNotifs();
   $('#content').innerHTML = `<div class="section-title"><h2>Notifications</h2>${ME.notifs.some(n => !n.lu) ? '<button class="btn btn-secondary" onclick="readAll()">Tout marquer comme lu</button>' : ''}</div>` +
-    (ME.notifs.length ? ME.notifs.map(n => `<div class="card notif ${n.lu ? '' : 'unread'}" onclick="readNotif('${n.id}')"><div><b>${esc(n.titre)}</b><div class="muted">${esc(n.corps || '')}</div></div><small class="muted">${dmyhm(n.created_at)}</small></div>`).join('') : '<div class="empty">Aucune notification.</div>');
+    (ME.notifs.length ? ME.notifs.map(n => `<div class="card notif ${n.lu ? '' : 'unread'}" onclick="readNotif('${n.id}')"><div><b>${esc(nTitre(n))}</b><div class="muted">${esc(nCorps(n))}</div>${role() === 'super_admin' && n.for_user ? `<small class="muted">Pour : ${esc(fullName(profileById(n.for_user)))}</small>` : ''}</div><small class="muted">${dmyhm(n.created_at)}</small></div>`).join('') : '<div class="empty">Aucune notification.</div>');
 };
 async function readNotif(id) { const n = ME.notifs.find(x => x.id === id); if (!n || n.lu) return; const r = await sb.from('notifications').update({ lu: true }).eq('id', id); if (!r.error) { n.lu = true; updateBell(); render() } }
 async function readAll() { const r = await sb.from('notifications').update({ lu: true }).eq('lu', false); if (!r.error) { ME.notifs.forEach(n => n.lu = true); updateBell(); render() } }
