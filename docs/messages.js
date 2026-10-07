@@ -56,6 +56,7 @@ const msgUnreadIn = t => t.ms.filter(m => MSG.dest.some(d => d.message_id === m.
 function msgTo(m) {
   const D = MSG.dest.filter(x => x.message_id === m.id);
   if (D.some(x => x.profil_id === msgMe())) return 'Vous';
+  if (!isStaff()) return 'Administration';
   if (m.portee === 'tous') return 'Tous les enquêteurs';
   if (m.portee === 'commune') return 'Enquêteurs · ' + (communeName(m.commune_id) || 'commune');
   const p = D[0] && profileById(D[0].profil_id); return p ? fullName(p) : 'Destinataire';
@@ -66,9 +67,9 @@ const msgTitle = t => { const r = t.ms[0], e = r.enquete_id && db.diagnostics.fi
 VIEWS.messages = async () => {
   if (Date.now() - MSG.t > 15000) await loadMessages();
   const staff = isStaff(), T = msgThreads();
-  const head = `<div class="section-title"><h2>Messagerie</h2>${staff ? '<button class="btn btn-primary" onclick="msgCompose()">✉ Nouveau message</button>' : ''}</div>`;
+  const head = `<div class="section-title"><h2>Messagerie</h2>${staff ? '<button class="btn btn-primary" onclick="msgCompose()">✉ Nouveau message</button>' : '<button class="btn btn-primary" onclick="msgComposeAdmin()">✉ Écrire à l’administration</button>'}</div>`;
   if (!MSG.ok) { $('#content').innerHTML = head + '<div class="empty">Messagerie indisponible (hors ligne, ou migration SUPABASE_MESSAGERIE.sql pas encore exécutée).</div>'; return }
-  const hint = staff ? '<p class="muted small">Vous pouvez écrire à un enquêteur, à tous les enquêteurs d’une commune, ou à tous. Les enquêteurs peuvent vous répondre.</p>' : '';
+  const hint = staff ? '<p class="muted small">Vous pouvez écrire à un enquêteur, à tous les enquêteurs d’une commune, ou à tous. Les enquêteurs peuvent vous répondre.</p>' : '<p class="muted small">Vous pouvez écrire à l’administration et répondre à ses messages.</p>';
   $('#content').innerHTML = head + hint + (T.length ? T.map(t => {
     const u = msgUnreadIn(t).length, l = t.last, who = l.expediteur_id === msgMe() ? 'Moi → ' + msgTo(t.ms[0]) : (l.expediteur_nom || 'Administration');
     return `<div class="card notif ${u ? 'unread' : ''}" onclick="msgOpen('${t.id}')"><div><b>${esc(msgTitle(t))}</b>${u ? ` <span class="badge b-warning">${u} nouveau(x)</span>` : ''}<div class="muted">${esc(l.corps.length > 120 ? l.corps.slice(0, 120) + '…' : l.corps)}</div><small class="muted">${esc(who)} · ${t.ms.length} message(s)</small></div><small class="muted">${dmyhm(l.created_at)}</small></div>`;
@@ -148,6 +149,29 @@ async function msgSend(ev, enqueteId) {
   const r = await sb.rpc('envoyer_message', { p_portee: portee, p_cible: cible, p_enquete: enqueteId || null, p_sujet: $('#mg_sujet').value.trim() || null, p_corps: corps, p_parent: null });
   if (r.error) return toast('Refusé : ' + r.error.message);
   closeModal(); toast('Message envoyé à ' + r.data + ' enquêteur(s)');
+  await loadMessages(); if (view === 'messages') render();
+  const t = msgThreads()[0]; if (t) msgOpen(t.id);
+}
+
+/* ---------- nouveau message (enquêteur -> administration) ---------- */
+function msgComposeAdmin() {
+  if (isStaff()) return;
+  const E = db.diagnostics.filter(d => d._server && d.meta.enqueteurId === msgMe());
+  openModal(`<h3 style="margin-top:0">Écrire à l’administration</h3>
+  <form onsubmit="msgSendAdmin(event)">
+  <label>À propos d’une enquête (facultatif)<select class="input" id="ma_enq">${selOpts(E.map(d => [d.id, (d.numero || '') + ' — ' + (d.meta.nom || 'sans nom')]), '', '— Aucune —')}</select></label>
+  <label>Objet (facultatif)<input class="input" id="ma_sujet" maxlength="120"></label>
+  <label>Message<textarea class="input" id="ma_corps" rows="5" maxlength="2000" required></textarea></label>
+  <p class="muted small">Connexion internet requise pour envoyer. Seules les enquêtes déjà synchronisées peuvent être citées.</p>
+  <div class="toolbar"><button class="btn btn-primary">Envoyer</button><button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button></div></form>`);
+}
+async function msgSendAdmin(ev) {
+  ev.preventDefault();
+  if (ME.offline || !navigator.onLine) return toast('Connexion requise pour envoyer un message');
+  const corps = $('#ma_corps').value.trim(); if (!corps) return toast('Écrivez un message');
+  const r = await sb.rpc('envoyer_message', { p_portee: 'direct', p_cible: null, p_enquete: $('#ma_enq').value || null, p_sujet: $('#ma_sujet').value.trim() || null, p_corps: corps, p_parent: null });
+  if (r.error) return toast('Refusé : ' + r.error.message);
+  closeModal(); toast('Message envoyé à l’administration');
   await loadMessages(); if (view === 'messages') render();
   const t = msgThreads()[0]; if (t) msgOpen(t.id);
 }
