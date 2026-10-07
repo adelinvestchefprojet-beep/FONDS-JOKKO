@@ -175,3 +175,29 @@ async function msgSendAdmin(ev) {
   await loadMessages(); if (view === 'messages') render();
   const t = msgThreads()[0]; if (t) msgOpen(t.id);
 }
+
+/* ---------- page Notifications : affiche aussi le CONTENU des messages ---------- */
+const N_TITRE = ['titre', 'title', 'sujet', 'objet'], N_CORPS = ['corps', 'message', 'contenu', 'body', 'texte', 'description'];
+const N_SKIP = new Set(['id', 'for_user', 'user_id', 'lu', 'created_at', 'updated_at', 'read_at', ...N_TITRE]);
+const nFirst = (n, keys) => { for (const k of keys) if (n[k]) return String(n[k]); return '' };
+function nExtra(n) { // affiche tout ce que la ligne contient (type, données JSON…) quand les colonnes habituelles sont vides
+  const out = [];
+  for (const [k, v] of Object.entries(n)) {
+    if (N_SKIP.has(k) || v == null || v === '' || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(v))) continue;
+    out.push(k + ' : ' + (typeof v === 'object' ? JSON.stringify(v) : v));
+  }
+  return out.join(' · ');
+}
+const nTitre = n => nFirst(n, N_TITRE) || n.type || 'Notification';
+const nCorps = n => nFirst(n, N_CORPS) || nExtra(n);
+const _vNotif = VIEWS.notifications;
+VIEWS.notifications = async () => {
+  await _vNotif();
+  if (Date.now() - MSG.t > 15000) await loadMessages();
+  const T = msgThreads().slice(0, 15); if (!T.length || view !== 'notifications') return;
+  const html = `<div class="section-title"><h2>Messages</h2><button class="btn btn-secondary" onclick="nav('messages')">Ouvrir la messagerie</button></div>` + T.map(t => {
+    const u = msgUnreadIn(t).length, l = t.last, txt = l.corps.length > 400 ? l.corps.slice(0, 400) + '…' : l.corps;
+    return `<div class="card notif ${u ? 'unread' : ''}" onclick="msgOpen('${t.id}')"><div><b>${esc(msgTitle(t))}</b><div class="muted small">${esc(l.expediteur_id === msgMe() ? 'Moi' : (l.expediteur_nom || 'Administration'))}</div><div>${msgHtml(txt)}</div></div><small class="muted">${dmyhm(l.created_at)}</small></div>`;
+  }).join('');
+  $('#content').insertAdjacentHTML('afterbegin', html);
+};
