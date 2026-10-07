@@ -234,7 +234,7 @@ function enqTable(L) {
   const sa = role() === 'super_admin';
   return tableOf(['N°', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'Date', 'Score', 'Actions'], L.map(d => [esc(d.numero), `<b>${esc(d.meta.nom || '—')}</b>`, esc(d.meta.commune || '—'), esc(d.meta.agent || '—'),
     `<span class="badge ${badgeCls(d.status)}">${d.status}</span>`, dmy(d.meta.date || d.createdAt), sc(d),
-    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="openDiag('${d.id}')">Voir</button>${sa && d.status === 'Définitive' ? `<button class="btn btn-primary btn-sm" onclick="enqStatus('${d.id}','validated')">Valider</button>` : ''}${sa && (d.status === 'Validée' || d.status === 'Définitive') ? `<button class="btn btn-secondary btn-sm" onclick="enqStatus('${d.id}','archived')">Archiver</button>` : ''}</div>`]), 'Aucune enquête.');
+    `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="openDiag('${d.id}')">Voir</button>${d.meta.enqueteurId ? `<button class="btn btn-secondary btn-sm" onclick="msgCompose('${d.meta.enqueteurId}','${d.id}')">✉ Commenter</button>` : ''}${sa && d.status === 'Définitive' ? `<button class="btn btn-primary btn-sm" onclick="enqStatus('${d.id}','validated')">Valider</button>` : ''}${sa && (d.status === 'Validée' || d.status === 'Définitive') ? `<button class="btn btn-secondary btn-sm" onclick="enqStatus('${d.id}','archived')">Archiver</button>` : ''}</div>`]), 'Aucune enquête.');
 }
 VIEWS.enquetes = () => {
   const agents = [...new Set(db.diagnostics.map(d => d.meta.agent).filter(Boolean))].sort();
