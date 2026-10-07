@@ -187,3 +187,9 @@ img.brand-mark{width:54px;height:54px}
   .auth-sep{margin-top:12px}
   .auth-foot{margin-top:8px;font-size:11px;line-height:1.35}
 }
+
+/* messagerie */
+.msg-thread{display:flex;flex-direction:column;gap:10px;margin:12px 0}
+.msg-b{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 14px;max-width:92%;font-size:14px;align-self:flex-start}
+.msg-b.me{background:#e7f4ed;align-self:flex-end}
+.msg-b details{margin-top:6px}.msg-b summary{cursor:pointer;color:var(--green);font-weight:700}
