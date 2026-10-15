@@ -181,23 +181,30 @@ async function syncNow(manual) {
   syncing = true; ME.syncError = ''; updateSync();
   try {
     if (role() === 'enqueteur') {
+      const errs = [];
       for (const d of db.diagnostics.filter(x => x._dirty && x.meta.enqueteurId === ME.profile.id)) {
-        const v = d._v || 0, photosOk = await uploadPhotos(d);
-        const up = await sb.from('enquetes').update(toServer(d)).eq('id', d.id).select('id,numero');
-        if (up.error) throw up.error;
-        let row = up.data[0];
-        if (!row) { // pas de ligne modifiable : nouvelle fiche, ou fiche déjà verrouillée côté serveur
-          const ins = await sb.from('enquetes').insert(toServer(d, true)).select('id,numero');
-          if (ins.error) { if (ins.error.code === '23505') { d._conflict = true; d._dirty = false; continue } throw ins.error }
-          row = ins.data[0];
-        }
-        d.numero = row.numero || d.numero; d._server = true;
-        if (photosOk && (d._v || 0) === v) d._dirty = false;
+        try {
+          const v = d._v || 0, photosOk = await uploadPhotos(d);
+          const up = await sb.from('enquetes').update(toServer(d)).eq('id', d.id).select('id,numero');
+          if (up.error) throw up.error;
+          let row = up.data[0];
+          if (!row) { // aucune ligne modifiée : nouvelle fiche, ou mise à jour refusée par le serveur
+            const ins = await sb.from('enquetes').insert(toServer(d, true)).select('id,numero');
+            if (ins.error) {
+              if (ins.error.code === '23505') throw new Error('Le serveur refuse la mise à jour de la fiche ' + (d.numero_local || d.numero) + ' (droits ou statut verrouillé)');
+              throw ins.error;
+            }
+            row = ins.data[0];
+          }
+          d.numero = row.numero || d.numero; d._server = true;
+          if (photosOk && (d._v || 0) === v) d._dirty = false;
+        } catch (e) { errs.push(errMsg(e)); console.warn('sync fiche', d.id, e) }
       }
+      if (errs.length) throw new Error(errs[0] + (errs.length > 1 ? ' (+' + (errs.length - 1) + ' autre(s) fiche(s))' : ''));
     }
     await pullAll();
   } catch (e) { ME.syncError = errMsg(e); console.warn('sync', e) }
-  finally { syncing = false; saveDB(); updateSync(); if (manual) toast(ME.syncError ? 'Synchronisation à réessayer : ' + ME.syncError : 'Synchronisation terminée'); if (!document.hidden && view === 'dashboard') render() }
+  finally { syncing = false; saveDB(); updateSync(); if (ME.syncError && !manual && Date.now() - (syncNow._lt || 0) > 30000) { syncNow._lt = Date.now(); toast('Synchronisation échouée : ' + ME.syncError) } if (manual) toast(ME.syncError ? 'Synchronisation à réessayer : ' + ME.syncError : 'Synchronisation terminée'); if (!document.hidden && view === 'dashboard') render() }
 }
 addEventListener('online', async () => { updateSync(); if (ME.offline && window.revalidate) await revalidate(); syncNow() });
 addEventListener('offline', updateSync);
