@@ -1,7 +1,68 @@
 /* JOKKOO – fiches de diagnostic (formulaire, notation, exports). Données : voir core.js */
 function getCurrent(){return db.diagnostics.find(d=>d.id===currentId)}
 function renderDiagTable(ds){if(!ds.length)return '<div class="empty">Aucun diagnostic. Commencez par créer une nouvelle fiche.</div>';return `<div class="card table-wrap"><table class="table"><thead><tr><th>N°</th><th>Organisation</th><th>Commune</th><th>Agent</th><th>Statut</th><th>Score</th><th></th></tr></thead><tbody>${ds.map(d=>{let s=scoreDiag(d);return `<tr><td><b>${esc(d.numero)}</b></td><td>${esc(d.meta.nom)||'—'}</td><td>${esc(d.meta.commune)||'—'}</td><td>${esc(d.meta.agent)||'—'}</td><td><span class="badge ${badgeCls(d.status)}">${d.status}</span>${d._dirty?' <small title="En attente d’envoi">⏳</small>':''}</td><td>${s.count?Math.round(s.pct*100)+'%':'—'}</td><td><button class="btn btn-secondary" onclick="openDiag('${d.id}')">Ouvrir</button>${d.status==='Brouillon'&&d.meta.enqueteurId===(ME.profile||{}).id?` <button class="btn btn-danger" onclick="deleteDraft('${d.id}')">Supprimer</button>`:''}</td></tr>`}).join('')}</tbody></table></div>`}
-function openDiag(id){currentId=id;currentVisit=0;nav('new');refreshDiag(id)}
+function openDiag(id){
+  const d=db.diagnostics.find(x=>x.id===id);
+  // Le personnel consulte les résultats sans ouvrir un formulaire vierge ou modifiable.
+  if(isStaff() || (d && isFinal(d))) return viewDiag(id);
+  currentId=id;currentVisit=0;nav('new');refreshDiag(id)
+}
+async function viewDiag(id){
+  currentId=id;
+  if(sb && !ME.offline && navigator.onLine){
+    try{
+      const r=await sb.from('enquetes').select('*').eq('id',id).maybeSingle();
+      if(r.error) throw r.error;
+      if(r.data){
+        const n=fromServer(r.data), old=db.diagnostics.find(x=>x.id===id);
+        if(old&&old._thumbs)n._thumbs=old._thumbs;
+        const i=db.diagnostics.findIndex(x=>x.id===id);
+        if(i>=0)db.diagnostics[i]=n;else db.diagnostics.unshift(n);
+        saveDB();
+      }
+    }catch(e){console.warn('viewDiag: lecture serveur',e);toast('Affichage de la copie locale : actualisation serveur impossible')}
+  }
+  view='resultats';
+  $('#pageTitle').textContent='Résultats de l’enquête';
+  document.querySelectorAll('#sidebar nav button').forEach(b=>b.classList.remove('active'));
+  render();
+}
+function resultValue(value){
+  if(value===null||value===undefined||value==='')return '<span class="muted">— Non renseigné</span>';
+  if(typeof value==='object'){
+    if(!Array.isArray(value)&&('done' in value||'date' in value)){
+      return (value.done?'✓ Réalisé':'Non réalisé')+(value.date?' · '+esc(value.date):'');
+    }
+    return esc(Array.isArray(value)?value.join(', '):Object.entries(value).map(([k,v])=>k+': '+v).join(' · '));
+  }
+  return esc(String(value));
+}
+function renderDiagResults(){
+  const d=getCurrent();
+  if(!d){$('#content').innerHTML='<div class="empty">Aucun résultat sélectionné. Retournez dans Mes enquêtes.</div>';return}
+  const sc=scoreDiag(d), answers=d.answers||{}, answered=Object.values(answers).filter(v=>v!==''&&v!==null&&v!==undefined&&(typeof v!=='object'||Object.keys(v).length||v.length)).length;
+  const sections=JOKKOO_VISITES.map((v,vi)=>{
+    const rows=v.questions.map(q=>{
+      const val=answers[q.id], photo=d.photos&&d.photos[q.id];
+      let media='';
+      if(photo){
+        const src=photoSrc(d,q.id);
+        media=src?'<div class="result-photo"><img src="'+esc(src)+'" alt="Photo jointe"></div>':
+          (!String(photo).startsWith('data:')?'<div class="result-photo"><img data-path="'+esc(photo)+'" alt="Photo jointe"></div>':'');
+      }
+      return '<div class="qcard result-answer"><div class="qtitle">'+esc(q.label)+'</div><div class="result-value">'+resultValue(val)+'</div>'+media+'</div>';
+    }).join('');
+    const n=v.questions.filter(q=>answers[q.id]!==undefined&&answers[q.id]!==''&&answers[q.id]!==null).length;
+    return '<section class="result-visit"><div class="section-title"><div><h2>'+ (vi+1)+'. '+esc(v.title)+'</h2><div class="muted">'+esc(v.subtitle||'')+'</div></div><span class="small">'+n+' réponse(s)</span></div><div class="qgrid">'+rows+'</div></section>';
+  }).join('');
+  $('#content').innerHTML='<div class="section-title"><div><h2>'+esc(d.meta.nom||d.numero||'Enquête')+'</h2><div class="muted">Résultats enregistrés · '+esc(d.numero||'')+'</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="nav(\''+(role()==='enqueteur'?'list':'enquetes')+'\')">← Retour aux enquêtes</button></div></div>'+
+    '<div class="grid result-summary">'+
+    '<div class="card"><div class="muted">Statut</div><h3><span class="badge '+badgeCls(d.status)+'">'+esc(d.status)+'</span></h3></div>'+
+    '<div class="card"><div class="muted">Score global</div><h3>'+(sc.count?Math.round(sc.pct*100)+'%':'Non calculé')+'</h3><div class="muted">'+sc.count+' réponse(s) notée(s)</div></div>'+
+    '<div class="card"><div class="muted">Réponses renseignées</div><h3>'+answered+'</h3><div class="muted">sur l’ensemble du questionnaire</div></div>'+
+    '<div class="card"><div class="muted">Enquêteur</div><h3>'+esc(d.meta.agent||'—')+'</h3><div class="muted">'+esc(d.meta.commune||'')+'</div></div></div>'+
+    (answered?sections:'<div class="empty">Cette enquête ne contient aucune réponse enregistrée dans le champ answers. Vérifiez la fiche source et sa synchronisation Supabase.</div>');
+}
 async function refreshDiag(id){if(!sb||ME.offline||!navigator.onLine||role()==='enqueteur')return;try{const r=await sb.from('enquetes').select('*').eq('id',id).maybeSingle();if(r.error||!r.data)return;const i=db.diagnostics.findIndex(x=>x.id===id);if(i<0)return;const n=fromServer(r.data);if(db.diagnostics[i]._thumbs)n._thumbs=db.diagnostics[i]._thumbs;db.diagnostics[i]=n;if(currentId===id&&view==='new')render()}catch(e){console.warn('refreshDiag',e)}}
 function renderForm(){let d=getCurrent();if(!d){$('#content').innerHTML='<div class="empty">Aucun diagnostic sélectionné.</div>';return}let v=JOKKOO_VISITES[currentVisit];let pct=Math.round((currentVisit/JOKKOO_VISITES.length)*100);$('#content').innerHTML=`<div class="card"><div class="diagnostic-head"><div><h2 style="margin:0">${esc(d.numero)}</h2><div class="muted">Fiche diagnostic JOKKOO</div></div><div class="toolbar"><span class="badge ${badgeCls(d.status)}">${d.status}</span>${canEdit(d)?'<button class="btn btn-secondary" onclick="saveDiagnostic(\'Sauvegardée\')">💾 Sauvegarder</button>':''}${validateBtn(d)}</div></div><div class="diagnostic-meta"><div class="meta-box"><small>Organisation</small><strong>${esc(d.meta.nom)||'À renseigner'}</strong></div><div class="meta-box"><small>Commune</small><strong>${esc(d.meta.commune)||'—'}</strong></div><div class="meta-box"><small>Enquêteur</small><strong>${esc(d.meta.agent)||'—'}</strong></div><div class="meta-box"><small>Date</small><input class="input" type="date" value="${esc(d.meta.date)}" ${canEdit(d)?'':'disabled'} onchange="setMeta('date',this.value)"></div></div><div class="progress"><i style="width:${Math.max(4,pct)}%"></i></div><div class="visit-tabs">${JOKKOO_VISITES.map((x,i)=>`<button class="visit-tab ${i===currentVisit?'active':''} ${i<currentVisit?'done':''}" onclick="goVisit(${i})">${i+1}. ${esc(x.title)}</button>`).join('')}</div><div class="section-title"><div><h2>${esc(v.title)}</h2><div class="muted">${esc(v.subtitle)}</div></div><span class="small">Étape ${currentVisit+1}/${JOKKOO_VISITES.length}</span></div>${(!canEdit(d)&&!Object.keys(d.answers||{}).length)?'<div class="empty">Aucune réponse enregistrée pour cette fiche sur le serveur (brouillon vide).</div>':''}<fieldset class="ro" ${canEdit(d)?'':'disabled'}><div class="qgrid">${v.questions.map(renderQuestion).join('')}</div></fieldset><div class="sticky-actions"><button class="btn btn-secondary" ${currentVisit===0?'disabled':''} onclick="goVisit(${currentVisit-1})">← Précédent</button><div class="toolbar">${canEdit(d)?'<button class="btn btn-secondary" onclick="saveDiagnostic(\'Brouillon\')">Sauvegarder le brouillon</button>':''}${currentVisit<JOKKOO_VISITES.length-1?`<button class="btn btn-primary" onclick="goVisit(${currentVisit+1})">${canEdit(d)?'Enregistrer et continuer →':'Suivant →'}</button>`:(canEdit(d)?`<button class="btn btn-gold" onclick="finalizeDiag()">🔒 Enregistrer définitivement</button>`:'')}</div></div></div>`}
 function renderQuestion(q){let d=getCurrent(), val=d.answers[q.id];if(q.condition){let actual=d.answers[q.condition.id];if(q.condition.equals!==undefined&&actual!==q.condition.equals)return '';if(q.condition.notEquals!==undefined&&actual===q.condition.notEquals)return ''}let note='';let p=paramFor(q,val);if(p){note=`<div class="score"><span>Score automatique</span><b>${Math.round(p.score*100)/100}/3 — ${esc(p.commentaire)}</b></div>`}else if(q.unrated){note='<div class="condition-note">Question informative — non notée dans PARAMETRES.</div>'}if(q.type==='checkdate'){let x=val||{};return `<div class="qcard"><label class="qtitle">${esc(q.label)}</label><label class="choice"><input type="checkbox" ${x.done?'checked':''} onchange="setAns('${q.id}',{done:this.checked,date:(this.checked?(getAns('${q.id}').date||new Date().toISOString().slice(0,10)):getAns('${q.id}').date||'')})"> Réalisé</label><input class="input" type="date" value="${esc(x.date||'')}" onchange="setAns('${q.id}',{done:getAns('${q.id}').done,date:this.value})"></div>`}
@@ -136,4 +197,4 @@ function clearLocal() {
   if (!confirm('Supprimer de cet appareil les fiches déjà envoyées au serveur ? Les fiches en attente d’envoi sont conservées.')) return;
   db.diagnostics = db.diagnostics.filter(d => d._dirty || !d._server); saveDB(); toast('Espace libéré'); render();
 }
-Object.assign(VIEWS, { new: renderForm, list: renderList, organisations: renderOrgs, referentiel: renderRef, exports: renderExports, stats: renderStats, settings: renderSettings });
+Object.assign(VIEWS, { new: renderForm, resultats: renderDiagResults, list: renderList, organisations: renderOrgs, referentiel: renderRef, exports: renderExports, stats: renderStats, settings: renderSettings });
