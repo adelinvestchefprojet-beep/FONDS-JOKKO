@@ -223,3 +223,16 @@ img.brand-mark{width:54px;height:54px}
   .sidebar, .topbar, .toolbar, .result-toolbar, .no-print, #auth, .logout, .nav-overlay, .toast { display:none!important; }
   a { color:inherit!important; text-decoration:none!important; }
 }
+
+
+/* Menu Export — présentation claire et professionnelle */
+.export-summary{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:16px}
+.export-summary .card{border:1px solid #dbe7e0;border-radius:14px;box-shadow:0 5px 18px rgba(8,80,48,.05)}
+.export-summary h3{font-size:26px;margin:8px 0 0;color:var(--green)}
+.export-main-card{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:24px;border:1px solid #cfe2d6;border-left:5px solid var(--green);background:linear-gradient(115deg,#f0f8f3,#fff)}
+.export-icon{width:58px;height:58px;display:grid;place-items:center;border-radius:15px;background:#dff1e6;font-size:29px;flex:none}
+.export-main-copy{flex:1;min-width:220px}
+.export-main-copy h3{margin:0 0 8px;color:var(--green-d);font-size:20px}
+.export-main-copy p{margin:0 0 10px;line-height:1.65}
+.export-main-card>.btn{white-space:nowrap}
+@media(max-width:600px){.export-summary{grid-template-columns:1fr 1fr}.export-main-card{padding:16px}.export-main-card>.btn{width:100%}}
