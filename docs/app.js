@@ -37,6 +37,16 @@ function resultValue(value){
   }
   return esc(String(value));
 }
+
+function exportDiagWord(){
+  const d=getCurrent();if(!d){toast('Aucune enquête sélectionnée');return}
+  const meta=d.meta||{},answers=d.answers||{};
+  const safe=v=>esc(v===null||v===undefined?'':String(v));
+  const sections=JOKKOO_VISITES.map((v,i)=>'<h2>Étape '+(i+1)+' — '+safe(v.title)+'</h2><table><tbody>'+v.questions.map(q=>'<tr><th>'+safe(q.label)+'</th><td>'+(answers[q.id]===undefined||answers[q.id]===null||answers[q.id]===''?'Non renseigné':safe(typeof answers[q.id]==='object'?JSON.stringify(answers[q.id]):answers[q.id]))+'</td></tr>').join('')+'</tbody></table>').join('');
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>Rapport JOKKOO - '+safe(meta.nom||d.numero||'Diagnostic')+'</title><style>@page{size:A4;margin:18mm}body{font-family:Arial,sans-serif;color:#183326;font-size:10pt;line-height:1.5}header{background:#087443;color:white;padding:25px;border-bottom:6px solid #c9232d}header h1{font-size:23pt;margin:10px 0}header p{margin:3px 0;color:#e2f3e9}.brand{font-size:12pt;letter-spacing:2px;font-weight:bold}h2{color:#087443;font-size:15pt;border-bottom:2px solid #087443;padding-bottom:7px;margin-top:26px}table{width:100%;border-collapse:collapse;margin:10px 0 20px}th,td{border:1px solid #d5e3da;padding:8px;text-align:left;vertical-align:top}th{width:38%;background:#edf6f0;color:#174d32}tr{page-break-inside:avoid}.meta{display:flex;gap:25px;flex-wrap:wrap;padding:18px 0}.meta div{min-width:130px}.meta small{display:block;color:#60756a;text-transform:uppercase;font-size:8pt}.meta strong{font-size:10pt}.score{background:#edf6f0;padding:12px;border-left:4px solid #087443}footer{border-top:1px solid #d5e3da;margin-top:30px;padding-top:12px;font-size:8pt;color:#60756a}</style></head><body><header><div class="brand">JOKKOO DIAGNOSTIC</div><p>RAPPORT DE RÉSULTATS DU DIAGNOSTIC</p><h1>'+safe(meta.nom||d.numero||'Organisation non renseignée')+'</h1><p>Référence : '+safe(d.numero||'Non attribuée')+' · Statut : '+safe(d.status||'Non renseigné')+'</p></header><div class="meta"><div><small>Organisation</small><strong>'+safe(meta.nom||'Non renseignée')+'</strong></div><div><small>Commune</small><strong>'+safe(meta.commune||'Non renseignée')+'</strong></div><div><small>Enquêteur</small><strong>'+safe(meta.agent||'Non renseigné')+'</strong></div></div><div class="score"><strong>Score global :</strong> '+(scoreDiag(d).count?Math.round(scoreDiag(d).pct*100)+'%':'Non calculé')+' · <strong>Réponses enregistrées :</strong> '+Object.values(answers).filter(v=>v!==''&&v!==null&&v!==undefined).length+'</div>'+sections+'<footer>JOKKOO DIAGNOSTIC — Document confidentiel réservé aux personnes autorisées.</footer></body></html>';
+  const blob=new Blob(['\ufeff',html],{type:'application/msword;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='JOKKOO_Rapport_'+String(d.numero||'diagnostic').replace(/[^a-z0-9_-]/gi,'_')+'.doc';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
 function renderDiagResults(){
   const d=getCurrent();
   if(!d){$('#content').innerHTML='<div class="empty">Aucun résultat sélectionné. Retournez dans Mes enquêtes.</div>';return}
@@ -55,7 +65,7 @@ function renderDiagResults(){
     const n=v.questions.filter(q=>answers[q.id]!==undefined&&answers[q.id]!==''&&answers[q.id]!==null).length;
     return '<section class="result-visit"><div class="section-title"><div><h2>'+ (vi+1)+'. '+esc(v.title)+'</h2><div class="muted">'+esc(v.subtitle||'')+'</div></div><span class="small">'+n+' réponse(s)</span></div><div class="qgrid">'+rows+'</div></section>';
   }).join('');
-  $('#content').innerHTML='<div class="section-title"><div><h2>'+esc(d.meta.nom||d.numero||'Enquête')+'</h2><div class="muted">Résultats enregistrés · '+esc(d.numero||'')+'</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="nav(\''+(role()==='enqueteur'?'list':'enquetes')+'\')">← Retour aux enquêtes</button></div></div>'+
+  $('#content').innerHTML='<div class="section-title"><div><h2>'+esc(d.meta.nom||d.numero||'Enquête')+'</h2><div class="muted">Résultats enregistrés · '+esc(d.numero||'')+'</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="nav(\''+(role()==='enqueteur'?'list':'enquetes')+'\')">← Retour aux enquêtes</button><button class="btn btn-secondary" onclick="exportDiagWord()">Télécharger Word</button><button class="btn btn-primary" onclick="window.print()">Télécharger PDF / Imprimer</button></div></div>'+
     '<div class="grid result-summary">'+
     '<div class="card"><div class="muted">Statut</div><h3><span class="badge '+badgeCls(d.status)+'">'+esc(d.status)+'</span></h3></div>'+
     '<div class="card"><div class="muted">Score global</div><h3>'+(sc.count?Math.round(sc.pct*100)+'%':'Non calculé')+'</h3><div class="muted">'+sc.count+' réponse(s) notée(s)</div></div>'+
