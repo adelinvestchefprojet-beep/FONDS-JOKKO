@@ -1,5 +1,5 @@
 /* JOKKOO offline cache: version bump purges mixed/stale JavaScript bundles. */
-const CACHE = 'jokkoo-v15';
+const CACHE = 'jokkoo-v16';
 const CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 const ASSETS = ['./', './index.html', './style.css', './config.js', './branding.js', './data.js', './core.js', './app.js', './rapport.js', './admin.js', './auth.js', './archive.js', './journal.js', './messages.js', './manifest.json', './assets/icon-192.png', './assets/icon-512.png', './assets/taatan-hero.jpg', './assets/taatan-logo.jpg', CDN];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => Promise.all(ASSETS.map(a => c.add(a).catch(() => {}))).then(() => self.skipWaiting())));
