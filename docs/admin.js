@@ -208,19 +208,21 @@ async function adminSave(id) {
 
 /* ---------- communes ---------- */
 VIEWS.communes = () => {
-  $('#content').innerHTML = `<div class="section-title"><h2>Communes (${ME.communes.length})</h2><button class="btn btn-primary" onclick="communeEdit()">＋ Ajouter une commune</button></div>` + tableOf(['Commune', 'Code', 'Département', 'Région', 'Enquêteurs', 'Enquêtes', 'Statut', 'Actions'], ME.communes.map(c => [
-    `<b>${esc(c.nom)}</b>`, esc(c.code || '—'), esc(c.departement || '—'), esc(c.region || '—'), ME.profiles.filter(p => p.commune_id === c.id && p.role === 'enqueteur' && p.statut === 'active').length, countOf(d => d.meta.communeId === c.id),
+  $('#content').innerHTML = `<div class="section-title"><h2>Communes (${ME.communes.length})</h2><button class="btn btn-primary" onclick="communeEdit()">＋ Ajouter une commune</button></div>` + tableOf(['Commune', 'Code commune', 'Code département', 'Département', 'Code région', 'Région', 'Enquêteurs', 'Enquêtes', 'Statut', 'Actions'], ME.communes.map(c => [
+    `<b>${esc(c.nom)}</b>`, esc(c.code || '—'), esc(c.code_departement || '—'), esc(c.departement || '—'), esc(c.code_region || '—'), esc(c.region || '—'), ME.profiles.filter(p => p.commune_id === c.id && p.role === 'enqueteur' && p.statut === 'active').length, countOf(d => d.meta.communeId === c.id),
     `<span class="badge ${c.actif ? 'b-final' : 'b-warning'}">${c.actif ? 'Active' : 'Inactive'}</span>`,
     `<div class="acts"><button class="btn btn-secondary btn-sm" onclick="communeEdit('${c.id}')">Modifier</button><button class="btn btn-secondary btn-sm" onclick="communeToggle('${c.id}')">${c.actif ? 'Désactiver' : 'Activer'}</button><button class="btn btn-secondary btn-sm" onclick="UF.commune='${c.id}';UF.statut='';nav('users')">Enquêteurs</button></div>`]), 'Aucune commune : ajoutez la première.');
 };
 function communeEdit(id) {
   const c = ME.communes.find(x => x.id === id) || {};
-  openModal(`<h3 style="margin-top:0">${id ? 'Modifier' : 'Ajouter'} une commune</h3><form onsubmit="communeSave(event,'${id || ''}')"><div class="two"><label>Nom<input class="input" id="c_nom" value="${esc(c.nom || '')}" required></label><label>Code<input class="input" id="c_code" value="${esc(c.code || '')}"></label></div>
-  <div class="two"><label>Département<input class="input" id="c_dep" value="${esc(c.departement || '')}"></label><label>Région<input class="input" id="c_reg" value="${esc(c.region || '')}"></label></div>
+  openModal(`<h3 style="margin-top:0">${id ? 'Modifier' : 'Ajouter'} une commune</h3><form onsubmit="communeSave(event,'${id || ''}')"><div class="two"><label>Nom de la commune<input class="input" id="c_nom" value="${esc(c.nom || '')}" required></label><label>Code commune<input class="input" id="c_code" value="${esc(c.code || '')}" placeholder="Code officiel"></label></div>
+  <div class="two"><label>Code département<input class="input" id="c_code_dep" value="${esc(c.code_departement || '')}" placeholder="Code officiel"></label><label>Département<input class="input" id="c_dep" value="${esc(c.departement || '')}"></label></div>
+  <div class="two"><label>Code région<input class="input" id="c_code_reg" value="${esc(c.code_region || '')}" placeholder="Code officiel"></label><label>Région<input class="input" id="c_reg" value="${esc(c.region || '')}"></label></div>
+  <p class="muted small">Les codes doivent correspondre au référentiel administratif officiel du Sénégal.</p>
   <div class="toolbar"><button class="btn btn-primary">Enregistrer</button><button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button></div></form>`);
 }
 async function communeSave(e, id) {
-  e.preventDefault(); const o = { nom: $('#c_nom').value.trim(), code: $('#c_code').value.trim() || null, departement: $('#c_dep').value.trim() || null, region: $('#c_reg').value.trim() || null };
+  e.preventDefault(); const o = { nom: $('#c_nom').value.trim(), code: $('#c_code').value.trim() || null, code_departement: $('#c_code_dep').value.trim() || null, departement: $('#c_dep').value.trim() || null, code_region: $('#c_code_reg').value.trim() || null, region: $('#c_reg').value.trim() || null };
   const r = id ? await sb.from('communes').update(o).eq('id', id).select() : await sb.from('communes').insert(o).select();
   if (r.error || !r.data.length) return toast('Refusé : ' + denied(r));
   closeModal(); toast('Commune enregistrée'); await refreshProfiles(); render();
