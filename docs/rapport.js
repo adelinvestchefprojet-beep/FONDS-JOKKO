@@ -57,7 +57,6 @@ function perfView(){const P=perf();if(!P.length)return empty;if(!P.find(x=>x.a==
  <p class="small muted"><b>Indice de performance (/100)</b> = 40 % complétude des champs obligatoires + 30 % fiches finalisées + 15 % photos justificatives (objectif : 3 par fiche) + 15 % rythme (objectif : 2 diagnostics par jour actif). L’écart de notation compare le score moyen donné par l’enquêteur à la moyenne de tous : un écart de plus de 15 points suggère de vérifier la cohérence de la notation.</p></div>`}
 const ds0=filtered;
 
-function csv(name,rows){download(name,'\ufeff'+rows.map(r=>r.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\n'),'text/csv')}
 function render_(){
  const tabs=[['collectif','▣ Rapport collectif'],['commune','◉ Rapport par commune'],['perf','★ Performance des enquêteurs']].filter(t=>t[0]!=='perf'||role()!=='enqueteur');
  const names=Object.keys(group(filtered(),comOf)).sort();if(!names.includes(R.commune))R.commune=names[0]||'';
@@ -65,10 +64,9 @@ function render_(){
  $('#content').innerHTML=`<div class="rpt-bar no-print"><div class="visit-tabs">${tabs.map(([k,l])=>`<button class="visit-tab ${R.tab===k?'active':''}" onclick="RPT.tab('${k}')">${l}</button>`).join('')}</div>
  <div class="toolbar">${R.tab==='commune'&&names.length?`<select class="input" style="width:auto" onchange="RPT.commune(this.value)">${names.map(n=>`<option ${n===R.commune?'selected':''}>${esc(n)}</option>`).join('')}</select>`:''}
  <label class="rpt-chk"><input type="checkbox" ${R.final?'checked':''} onchange="RPT.final(this.checked)"> Définitifs uniquement</label>
- <button class="btn btn-primary" onclick="window.print()">⎙ Imprimer / PDF</button><button class="btn btn-secondary" onclick="RPT.word()">⇩ Word</button>${R.tab!=='commune'?'<button class="btn btn-gold" onclick="RPT.csv()">⇩ CSV</button>':''}</div></div>${body}`}
+ <button class="btn btn-primary" onclick="window.print()">⎙ Imprimer / PDF</button><button class="btn btn-secondary" onclick="RPT.word()">⇩ Word</button></div></div>${body}`}
 window.RPT={tab:t=>{R.tab=t;render_()},commune:c=>{R.commune=c;render_()},final:v=>{R.final=v;render_()},agent:i=>{R.agent=perf()[i].a;render_()},
  word(){const el=$('#rptDoc');if(!el)return toast('Rien à exporter');download('rapport-jokkoo-'+R.tab+'.doc','<html><head><meta charset="utf-8"><style>body{font-family:Calibri,Arial}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px;font-size:11pt}th{background:#e3f1e9}h2,h3{color:#087443}.bar{display:none}</style></head><body>'+el.innerHTML+'</body></html>','application/msword');toast('Rapport Word téléchargé')},
- csv(){if(R.tab==='perf'){csv('performance-enqueteurs.csv',[['Enquêteur','Diagnostics','Communes','Complétude %','Finalisées %','Photos %','Rythme %','Score moyen %','Indice /100'],...perf().map(r=>[r.a,r.n,r.com,pc(r.req),pc(r.fin),pc(r.ph),pc(r.ryt),r.s==null?'':pc(r.s),pc(r.idx)])])}
-  else{const g=group(filtered(),comOf);csv('rapport-collectif.csv',[['Commune','Diagnostics','Score global %',...DOMS],...Object.entries(g).map(([n,L])=>{const a=agg(L);return[n,L.length,a.g==null?'':pc(a.g),...DOMS.map(d=>a.dom[d]==null?'':pc(a.dom[d]))]})])}}};
+};
 VIEWS.rapports=function(){$('#pageTitle').textContent=role()==='enqueteur'?'Mes rapports':'Rapports & performance';render_()};
 })();
