@@ -75,7 +75,12 @@ async function flushDB() { if (IDB.db && ME.profile) await IDB.set('db', db) }
 addEventListener('pagehide', flushDB);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushDB() });
 const pendingCount = () => db.diagnostics.filter(d => d._dirty && d.meta.enqueteurId === (ME.profile || {}).id).length;
-function touch(d) { d._dirty = true; d._v = (d._v || 0) + 1; d.updatedAt = new Date().toISOString(); saveDB(); clearTimeout(touch._t); touch._t = setTimeout(() => syncNow(), 4000) }
+function touch(d) {
+  d._v = (d._v || 0) + 1; d.updatedAt = new Date().toISOString();
+  // Les modifications d'une fiche temporaire restent en mémoire jusqu'à une action explicite d'enregistrement.
+  if (d._unsaved) return;
+  d._dirty = true; saveDB(); clearTimeout(touch._t); touch._t = setTimeout(() => syncNow(), 4000);
+}
 function fixNom(d) { if (!d.meta.nom && d.answers && d.answers.nom) d.meta.nom = d.answers.nom }
 
 /* ---------- conversion serveur <-> local ---------- */
