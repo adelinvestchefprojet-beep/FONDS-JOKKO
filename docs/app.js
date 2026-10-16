@@ -92,7 +92,7 @@ function renderExports(){
   $('#content').innerHTML=`<div class="section-title"><div><h2>Export des données</h2><div class="muted">Téléchargez un fichier Excel présenté et structuré pour le suivi au siège.</div></div></div>
   <div class="grid export-summary"><div class="card"><div class="muted">Dossiers disponibles</div><h3>${total}</h3></div><div class="card"><div class="muted">Réponses enregistrées</div><h3>${totalRep}</h3></div></div>
   <div class="card export-main-card"><div class="export-icon">📊</div><div class="export-main-copy"><h3>Rapport Excel JOKKOO</h3><p>Un tableau avec en-têtes colorés, bordures, lignes alternées et colonnes clairement séparées. Chaque ligne correspond à une réponse, avec le dossier, l’organisation, la commune, l’enquêteur, la question, la réponse et le score disponible.</p><div class="muted">Format compatible avec Microsoft Excel · Toutes les enquêtes accessibles à votre compte</div></div><button class="btn btn-primary" onclick="exportExcelStyled()">⇩ Télécharger Excel</button></div>
-  <div class="card"><h3>Rapports individuels</h3><p class="muted">Pour télécharger une fiche complète en Word ou PDF, ouvrez <b>Mes enquêtes → Voir</b>, puis utilisez les boutons du rapport individuel. Les formats CSV et JSON sont masqués pour simplifier le menu.</p></div>`;
+  <div class="card"><h3>Rapports individuels</h3><p class="muted">Pour télécharger une fiche complète en Word ou PDF, ouvrez <b>Mes enquêtes → Voir</b>, puis utilisez les boutons du rapport individuel. Les rapports individuels sont disponibles en Word ou PDF depuis la fiche de chaque enquête.</p></div>`;
 }
 function takePhoto(id){let inp=$('#photoInput');inp.value='';inp.onchange=()=>handlePhoto(id,inp.files[0]);inp.click()}
 function choosePhoto(id){takePhoto(id)}
