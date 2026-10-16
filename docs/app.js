@@ -11,7 +11,7 @@ function openDiag(id){
   if(isStaff() || (d && (isFinal(d) || ansCount(d)>0))) return viewDiag(id);
   currentId=id;currentVisit=0;nav('new');refreshDiag(id)
 }
-function openOrgDiag(id){reportBack='organisations';viewDiag(id)}
+function openOrgDiag(id){const d=db.diagnostics.find(x=>x.id===id);if(!d||d._unsaved){toast('Cette enquête n’est pas encore enregistrée');return}reportBack='organisations';viewDiag(id)}
 function editDiag(id){reportBack=null;currentId=id;currentVisit=0;nav('new');refreshDiag(id)}
 async function viewDiag(id){
   currentId=id;
@@ -92,7 +92,8 @@ function scoreDiag(d){let vals=[];for(const v of JOKKOO_VISITES){for(const q of 
 function domainScores(ds){let out={};for(const d of ds){for(const v of JOKKOO_VISITES){for(const q of v.questions){let p=paramFor(q,d.answers[q.id]);if(p){out[p.domaine]??=[];out[p.domaine].push(Number(p.score)/3)}}}}for(const k of Object.keys(out))out[k]=out[k].reduce((a,b)=>a+b,0)/out[k].length;return out}
 function renderOrgs(){
   const map={};
-  db.diagnostics.forEach(d=>{const n=d.meta.nom||(d.answers&&d.answers.nom)||'Organisation sans nom';(map[n]??=[]).push(d)});
+  // Une fiche ouverte mais non enregistrée n'est pas une organisation enregistrée.
+  db.diagnostics.filter(d=>!d._unsaved).forEach(d=>{const n=d.meta.nom||(d.answers&&d.answers.nom)||'Organisation sans nom';(map[n]??=[]).push(d)});
   const orgs=Object.entries(map).map(([n,a])=>{a.sort((x,y)=>ansCount(y)-ansCount(x)||String(y.numero).localeCompare(String(x.numero)));return [n,a]}).sort((x,y)=>ansCount(y[1][0])-ansCount(x[1][0])||x[0].localeCompare(y[0]));
   $('#content').innerHTML=`<div class="section-title"><div><h2>Organisations</h2><div class="muted">${orgs.length} organisation(s) · cliquez sur une enquête pour afficher son rapport de résultats</div></div></div><div class="grid">${orgs.map(([n,a])=>{
     const best=a[0],sc=scoreDiag(best),com=best.meta.commune||'';
