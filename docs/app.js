@@ -104,23 +104,180 @@ function renderExports(){
   const totalRep=(db.diagnostics||[]).reduce((n,d)=>n+Object.values(d.answers||{}).filter(v=>v!==undefined&&v!==null&&v!=='').length,0);
   $('#content').innerHTML=`<div class="section-title"><div><h2>Export des données</h2><div class="muted">Téléchargez un fichier Excel présenté et structuré pour le suivi au siège.</div></div></div>
   <div class="grid export-summary"><div class="card"><div class="muted">Dossiers disponibles</div><h3>${total}</h3></div><div class="card"><div class="muted">Réponses enregistrées</div><h3>${totalRep}</h3></div></div>
-  <div class="card export-main-card"><div class="export-icon">📊</div><div class="export-main-copy"><h3>Rapport Excel JOKKOO</h3><p>Un tableau avec en-têtes colorés, bordures, lignes alternées et colonnes clairement séparées. Chaque ligne correspond à une réponse, avec le dossier, l’organisation, la commune, l’enquêteur, la question, la réponse et le score disponible.</p><div class="muted">Format compatible avec Microsoft Excel · Toutes les enquêtes accessibles à votre compte</div></div><button class="btn btn-primary" onclick="exportExcelStyled()">⇩ Télécharger Excel</button></div>
+  <div class="card export-main-card"><div class="export-icon">📊</div><div class="export-main-copy"><h3>Rapport Excel JOKKOO</h3><p>Un classeur Excel en 3 feuilles : <b>Synthèse</b> (une ligne par dossier, avancement et score), <b>Rapport détaillé</b> (réponses regroupées par organisation puis par étape, sans répétition, avec plan repliable) et <b>Données</b> (tableau filtrable, une ligne par réponse, pour les tris et tableaux croisés).</p><div class="muted">Fichier .xlsx compatible Excel · Toutes les enquêtes accessibles à votre compte</div></div><button class="btn btn-primary" onclick="exportExcelStyled()">⇩ Télécharger Excel</button></div>
   <div class="card"><h3>Rapports individuels</h3><p class="muted">Pour télécharger une fiche complète en Word ou PDF, ouvrez <b>Mes enquêtes → Voir</b>, puis utilisez les boutons du rapport individuel. Les formats CSV et JSON sont masqués pour simplifier le menu.</p></div>`;
 }
 function takePhoto(id){let inp=$('#photoInput');inp.value='';inp.onchange=()=>handlePhoto(id,inp.files[0]);inp.click()}
 function choosePhoto(id){takePhoto(id)}
-function exportExcelStyled(){
-  const diagnostics=db.diagnostics||[];
-  if(!diagnostics.length){toast('Aucune enquête à exporter');return}
-  const escX=v=>String(v===undefined||v===null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const fmt=v=>Array.isArray(v)?v.join(' ; '):(v&&typeof v==='object'?JSON.stringify(v):String(v??''));
-  const rows=[];
-  diagnostics.forEach(d=>{const answers=d.answers||{};JOKKOO_VISITES.forEach(v=>v.questions.forEach(q=>{const val=answers[q.id];if(val===undefined||val===null||val==='')return;const p=paramFor(q,val);rows.push([d.numero,d.meta&&d.meta.nom,d.meta&&d.meta.commune,d.meta&&d.meta.agent,d.status,q.label,fmt(val),p&&p.score!==undefined?p.score:'',p&&p.commentaire||''])}))});
-  if(!rows.length){toast('Aucune réponse renseignée à exporter');return}
-  const headers=['Référence dossier','Organisation','Commune','Enquêteur','Statut','Question / Indicateur','Réponse enregistrée','Score','Commentaire / Analyse'];
-  const today=new Date().toLocaleDateString('fr-FR');
-  const html='<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Réponses JOKKOO</x:Name><x:WorksheetOptions><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>4</x:SplitHorizontal><x:TopRowBottomPane>4</x:TopRowBottomPane><x:ActivePane>2</x:ActivePane></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><style>body{font-family:Calibri,Arial,sans-serif;color:#20372b}table{border-collapse:collapse;width:100%}.title{background:#087443;color:#fff;font-size:18pt;font-weight:bold;padding:14px}.sub{background:#eaf4ee;color:#315b43;font-size:10pt;padding:8px}.meta{background:#f4f8f5;color:#456453;padding:7px}.head th{background:#087443;color:#fff;font-weight:bold;border:1px solid #075c35;padding:9px;text-align:left;vertical-align:middle;white-space:normal}.data td{border:1px solid #cbdcd1;padding:7px;vertical-align:top;mso-number-format:"\\@";white-space:normal;word-wrap:break-word}.data:nth-child(even) td{background:#edf6f0}.foot{color:#60756a;font-size:9pt;padding:10px;border-top:2px solid #c9232d}</style></head><body><table><tr><td colspan="9" class="title">JOKKOO DIAGNOSTIC — EXPORT DES ENQUÊTES</td></tr><tr><td colspan="9" class="sub">Rapport de suivi des diagnostics · Généré le '+escX(today)+'</td></tr><tr><td colspan="3" class="meta">Dossiers exportés : '+diagnostics.length+'</td><td colspan="3" class="meta">Réponses renseignées : '+rows.length+'</td><td colspan="3" class="meta">Document interne — données confidentielles</td></tr><tr class="head">'+headers.map(h=>'<th>'+escX(h)+'</th>').join('')+'</tr>'+rows.map(r=>'<tr class="data">'+r.map(v=>'<td>'+escX(v)+'</td>').join('')+'</tr>').join('')+'<tr><td colspan="9" class="foot">JOKKOO DIAGNOSTIC · Export de travail — conserver dans un emplacement sécurisé.</td></tr></table></body></html>';
-  const blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='JOKKOO_Export_Enquetes_'+new Date().toISOString().slice(0,10)+'.xls';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+/* ===== Export Excel JOKKOO : vrai fichier .xlsx en 3 feuilles =====
+   1. Synthèse         : une ligne par dossier (l'organisation n'apparaît qu'une fois)
+   2. Rapport détaillé : réponses regroupées par dossier puis par étape, sans répétition, avec plan repliable
+   3. Données          : tableau à plat filtrable (une ligne par réponse) pour les tris et tableaux croisés */
+const XL = { green: 'FF087443', greenD: 'FF04492A', red: 'FFC9232D', light: 'FFE6F4EC', band: 'FFD3EBDD', line: 'FFCBDCD1', ink: 'FF14231C', muted: 'FF5B6F65', zebra: 'FFF5FAF7', white: 'FFFFFFFF', amber: 'FFFFF1C7', rose: 'FFFDE3E4' };
+const XL_FONT = 'Arial';
+const XL_STATUT = { 'Définitive': ['FFD9F2E3', 'FF0B6B3E'], 'Validée': ['FFBFE8D2', 'FF04492A'], 'Sauvegardée': ['FFFFF1C7', 'FF8A6A00'], 'Brouillon': ['FFFDE3E4', 'FFA3171F'], 'Archivée': ['FFE7ECEF', 'FF4A5A64'] };
+const xlFill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
+const xlBorder = c => { const l = { style: 'thin', color: { argb: c || XL.line } }; return { top: l, left: l, bottom: l, right: l } };
+const xlHas = v => v !== undefined && v !== null && v !== '' && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0));
+const xlFr = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(s || '') };
+const xlRef = d => d.numero || d.numero_local || 'Non attribuée';
+const xlNom = d => (d.meta && d.meta.nom) || (d.answers && d.answers.nom) || 'Organisation sans nom';
+
+/* Valeur lisible d'une réponse : { v: valeur de cellule, f: format numérique éventuel } */
+function xlValue(q, val, photo) {
+  if (q.type === 'checkdate' || (val && typeof val === 'object' && !Array.isArray(val) && ('done' in val || 'date' in val)))
+    return { v: (val.done ? '✔ Réalisé' : 'Non réalisé') + (val.date ? ' · le ' + xlFr(val.date) : '') };
+  if (q.type === 'photoDoc') return { v: (val === 'Oui' ? 'Oui — document disponible' : String(val || 'Document joint')) + (photo ? ' · photo jointe' : '') };
+  if (val instanceof Date) return { v: val, f: 'dd/mm/yyyy' };
+  if (Array.isArray(val)) return { v: val.join(' ; ') };
+  if (typeof val === 'object') return { v: Object.entries(val).map(([k, x]) => k + ' : ' + x).join(' ; ') };
+  if (q.type === 'date' && /^\d{4}-\d{2}-\d{2}/.test(String(val))) { const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})/); return { v: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])), f: 'dd/mm/yyyy' } }
+  if (q.type === 'number' && String(val).trim() !== '' && isFinite(Number(val))) { const n = Number(val); return { v: n, f: Number.isInteger(n) ? '#,##0' : '#,##0.00' } }
+  return { v: String(val) };
+}
+
+/* Prépare les données une seule fois : un objet par dossier, avec ses étapes et ses réponses */
+function xlPrepare(diagnostics) {
+  const stepsN = JOKKOO_VISITES.length;
+  const total = JOKKOO_VISITES.reduce((a, v) => a + v.questions.length, 0);
+  return diagnostics.map(d => {
+    const answers = d.answers || {}, photos = d.photos || {};
+    const steps = JOKKOO_VISITES.map((v, i) => {
+      const rows = [];
+      v.questions.forEach(q => {
+        const val = answers[q.id];
+        const has = q.type === 'photoDoc' ? (xlHas(val) || !!photos[q.id]) : xlHas(val);
+        if (!has) return;
+        const p = paramFor(q, val), x = xlValue(q, val, photos[q.id]);
+        rows.push({ q, label: q.label, domain: (p && p.domaine) || q.domain || '', val: x.v, fmt: x.f, score: p && p.score !== undefined && p.score !== null && p.score !== '' ? Number(p.score) : null, comment: (p && p.commentaire) || '' });
+      });
+      return { n: i + 1, title: v.title, done: rows.length, total: v.questions.length, rows };
+    });
+    const got = steps.reduce((a, s) => a + s.done, 0), sc = scoreDiag(d);
+    return { d, ref: xlRef(d), nom: xlNom(d), commune: (d.meta && d.meta.commune) || '', agent: (d.meta && d.meta.agent) || '', statut: d.status || '', steps, got, total, pct: total ? got / total : 0, score: sc && sc.count ? sc.pct : null, stepsN };
+  }).sort((a, b) => a.nom.localeCompare(b.nom, 'fr') || String(a.ref).localeCompare(String(b.ref)));
+}
+
+function xlTitle(ws, cols, title, sub, meta) {
+  const last = ws.getColumn(cols).letter;
+  ws.mergeCells('A1:' + last + '1'); ws.mergeCells('A2:' + last + '2'); ws.mergeCells('A3:' + last + '3');
+  const t = ws.getCell('A1'); t.value = title; t.font = { name: XL_FONT, size: 16, bold: true, color: { argb: XL.white } }; t.fill = xlFill(XL.green); t.alignment = { vertical: 'middle', indent: 1 };
+  const s = ws.getCell('A2'); s.value = sub; s.font = { name: XL_FONT, size: 10, color: { argb: XL.greenD } }; s.fill = xlFill(XL.light); s.alignment = { vertical: 'middle', indent: 1 };
+  const m = ws.getCell('A3'); m.value = meta; m.font = { name: XL_FONT, size: 9, italic: true, color: { argb: XL.muted } }; m.alignment = { vertical: 'middle', indent: 1 };
+  ws.getRow(1).height = 30; ws.getRow(2).height = 20; ws.getRow(3).height = 18;
+  ws.getRow(3).border = { bottom: { style: 'medium', color: { argb: XL.red } } };
+  for (let c = 1; c <= cols; c++) ws.getRow(3).getCell(c).border = { bottom: { style: 'medium', color: { argb: XL.red } } };
+}
+function xlHead(ws, rowN, headers) {
+  const r = ws.getRow(rowN); r.height = 32;
+  headers.forEach((h, i) => { const c = r.getCell(i + 1); c.value = h; c.font = { name: XL_FONT, size: 10, bold: true, color: { argb: XL.white } }; c.fill = xlFill(XL.greenD); c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = xlBorder(XL.greenD) });
+}
+function xlPage(ws, titleRows) {
+  ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 } };
+  if (titleRows) ws.pageSetup.printTitlesRow = titleRows;
+  ws.headerFooter.oddFooter = '&L&8JOKKOO DIAGNOSTIC — document confidentiel&R&8Page &P / &N';
+}
+
+function xlBuild(X, diagnostics) {
+  const data = xlPrepare(diagnostics), today = new Date().toLocaleDateString('fr-FR');
+  const nAns = data.reduce((a, o) => a + o.got, 0);
+  const wb = new X.Workbook(); wb.creator = 'JOKKOO DIAGNOSTIC'; wb.created = new Date(); wb.title = 'Export des enquêtes JOKKOO';
+  const meta = 'Dossiers : ' + data.length + '   ·   Réponses renseignées : ' + nAns + '   ·   Document interne — données confidentielles';
+
+  /* ---------- 1. Synthèse ---------- */
+  const s1 = wb.addWorksheet('Synthèse', { views: [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }], properties: { tabColor: { argb: XL.green } } });
+  const stepsN = JOKKOO_VISITES.length, c1 = 8 + stepsN;
+  xlTitle(s1, c1, 'JOKKOO DIAGNOSTIC — EXPORT DES ENQUÊTES', 'Synthèse par dossier · Généré le ' + today, meta);
+  const widths = [18, 30, 16, 20, 14, 12, 13, 12]; for (let i = 0; i < stepsN; i++) widths.push(15);
+  widths.forEach((w, i) => s1.getColumn(i + 1).width = w);
+  s1.getRow(4).height = 6;
+  xlHead(s1, 5, ['Référence', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'Réponses renseignées', 'Avancement', 'Score global'].concat(JOKKOO_VISITES.map((v, i) => (i + 1) + '. ' + v.title)));
+  s1.getRow(5).height = 60;
+  data.forEach((o, i) => {
+    const r = s1.getRow(6 + i), zebra = i % 2 ? XL.zebra : XL.white;
+    const vals = [o.ref, o.nom, o.commune, o.agent, o.statut, o.got, o.pct, o.score];
+    vals.forEach((v, k) => { const c = r.getCell(k + 1); c.value = v; c.font = { name: XL_FONT, size: 10, bold: k === 1, color: { argb: XL.ink } }; c.fill = xlFill(zebra); c.border = xlBorder(); c.alignment = { vertical: 'middle', wrapText: true, horizontal: k >= 5 ? 'center' : 'left' } });
+    r.getCell(6).value = { formula: 'COUNTIFS(Données!$A:$A,A' + (6 + i) + ',Données!$B:$B,B' + (6 + i) + ')', result: o.got };
+    r.getCell(6).numFmt = '0'; r.getCell(7).numFmt = '0%'; r.getCell(8).numFmt = '0%';
+    const st = XL_STATUT[o.statut]; if (st) { const c = r.getCell(5); c.fill = xlFill(st[0]); c.font = { name: XL_FONT, size: 10, bold: true, color: { argb: st[1] } }; c.alignment = { vertical: 'middle', horizontal: 'center' } }
+    o.steps.forEach((s, k) => { const c = r.getCell(9 + k); c.value = s.done + ' / ' + s.total; c.font = { name: XL_FONT, size: 10, color: { argb: s.done === 0 ? 'FF9AA7A0' : XL.ink }, bold: s.done === s.total }; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.fill = xlFill(s.done === s.total ? 'FFD9F2E3' : zebra) });
+    r.height = 24;
+  });
+  const lastD = 5 + data.length, tr = s1.getRow(lastD + 1);
+  tr.height = 24;
+  for (let k = 1; k <= c1; k++) { const c = tr.getCell(k); c.fill = xlFill(XL.band); c.border = xlBorder(XL.green); c.font = { name: XL_FONT, size: 10, bold: true, color: { argb: XL.greenD } }; c.alignment = { vertical: 'middle', horizontal: k >= 6 ? 'center' : 'left' } }
+  tr.getCell(1).value = 'TOTAL / MOYENNE';
+  tr.getCell(2).value = { formula: 'COUNTA(B6:B' + lastD + ')&" dossier(s)"', result: data.length + ' dossier(s)' };
+  tr.getCell(6).value = { formula: 'SUM(F6:F' + lastD + ')', result: nAns }; tr.getCell(6).numFmt = '0';
+  tr.getCell(7).value = { formula: 'IFERROR(AVERAGE(G6:G' + lastD + '),0)', result: data.length ? data.reduce((a, o) => a + o.pct, 0) / data.length : 0 }; tr.getCell(7).numFmt = '0%';
+  const sc = data.filter(o => o.score != null);
+  tr.getCell(8).value = { formula: 'IFERROR(AVERAGE(H6:H' + lastD + '),"—")', result: sc.length ? sc.reduce((a, o) => a + o.score, 0) / sc.length : '—' }; tr.getCell(8).numFmt = '0%';
+  s1.getCell('A' + (lastD + 3)).value = 'Lecture : « Réponses renseignées » = nombre de questions ayant une réponse ; « Avancement » = réponses renseignées / ' + (data[0] ? data[0].total : 0) + ' questions ; « Score global » vide = non calculé (réponses insuffisantes). Le détail est dans « Rapport détaillé », le tableau filtrable dans « Données ».';
+  s1.getCell('A' + (lastD + 3)).font = { name: XL_FONT, size: 9, italic: true, color: { argb: XL.muted } };
+  s1.addConditionalFormatting({ ref: 'H6:H' + lastD, rules: [
+    { type: 'expression', formulae: ['AND(ISNUMBER(H6),H6>=0.7)'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFD9F2E3' } }, font: { bold: true, color: { argb: 'FF0B6B3E' } } } },
+    { type: 'expression', formulae: ['AND(ISNUMBER(H6),H6>=0.4,H6<0.7)'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: XL.amber } }, font: { bold: true, color: { argb: 'FF8A6A00' } } } },
+    { type: 'expression', formulae: ['AND(ISNUMBER(H6),H6<0.4)'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: XL.rose } }, font: { bold: true, color: { argb: 'FFA3171F' } } } }] });
+  s1.addConditionalFormatting({ ref: 'G6:G' + lastD, rules: [{ type: 'dataBar', gradient: false, cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FF7CC4A0' } }] });
+  s1.autoFilter = 'A5:' + s1.getColumn(c1).letter + lastD;
+  xlPage(s1, '5:5');
+
+  /* ---------- 2. Rapport détaillé ---------- */
+  const s2 = wb.addWorksheet('Rapport détaillé', { views: [{ state: 'frozen', ySplit: 5, showGridLines: false }], properties: { tabColor: { argb: XL.greenD }, outlineProperties: { summaryBelow: false }, outlineLevelRow: 3 } });
+  [8, 56, 46, 9, 44].forEach((w, i) => s2.getColumn(i + 1).width = w);
+  xlTitle(s2, 5, 'JOKKOO DIAGNOSTIC — RAPPORT DÉTAILLÉ PAR DOSSIER', 'Réponses regroupées par organisation puis par étape · Généré le ' + today, meta);
+  s2.getRow(4).height = 6;
+  xlHead(s2, 5, ['N°', 'Question / Indicateur', 'Réponse enregistrée', 'Score', 'Commentaire / Analyse']);
+  let r = 6;
+  const mergeRow = (n, fill, font, h, text, level, align) => { s2.mergeCells('A' + n + ':E' + n); const c = s2.getCell('A' + n); c.value = text; c.fill = xlFill(fill); c.font = font; c.alignment = { vertical: 'middle', indent: 1, wrapText: true, horizontal: align || 'left' }; for (let k = 1; k <= 5; k++) s2.getRow(n).getCell(k).border = xlBorder(fill === XL.greenD ? XL.greenD : XL.line); s2.getRow(n).height = h; if (level) { s2.getRow(n).outlineLevel = level; s2.getRow(n).collapsed = false } };
+  data.filter(o => o.got > 0).forEach(o => {
+    mergeRow(r, XL.greenD, { name: XL_FONT, size: 13, bold: true, color: { argb: XL.white } }, 28, o.nom.toUpperCase() + (o.commune ? '   —   ' + o.commune : ''), 0); r++;
+    const sc2 = o.score != null ? Math.round(o.score * 100) + ' %' : 'non calculé';
+    mergeRow(r, XL.light, { name: XL_FONT, size: 10, color: { argb: XL.greenD } }, 22, 'Référence : ' + o.ref + '    ·    Enquêteur : ' + (o.agent || '—') + '    ·    Statut : ' + (o.statut || '—') + '    ·    Réponses : ' + o.got + ' / ' + o.total + ' (' + Math.round(o.pct * 100) + ' %)    ·    Score global : ' + sc2, 0); r++;
+    o.steps.filter(s => s.done > 0).forEach(s => {
+      mergeRow(r, XL.band, { name: XL_FONT, size: 11, bold: true, color: { argb: XL.greenD } }, 22, 'ÉTAPE ' + s.n + '  |  ' + s.title + '     (' + s.done + ' / ' + s.total + ' renseigné(s))', 1); r++;
+      s.rows.forEach((x, k) => {
+        const row = s2.getRow(r), z = k % 2 ? XL.zebra : XL.white;
+        const vals = [s.n + '.' + (k + 1), x.label, x.val, x.score, x.comment];
+        vals.forEach((v, j) => { const c = row.getCell(j + 1); c.value = v; c.font = { name: XL_FONT, size: 10, bold: j === 2, color: { argb: XL.ink } }; c.fill = xlFill(z); c.border = xlBorder(); c.alignment = { vertical: 'top', wrapText: true, horizontal: j === 0 || j === 3 ? 'center' : 'left' } });
+        if (x.fmt) row.getCell(3).numFmt = x.fmt;
+        if (x.score != null) { const c = row.getCell(4); const col = x.score >= 2.5 ? ['FFD9F2E3', 'FF0B6B3E'] : x.score >= 1.5 ? [XL.amber, 'FF8A6A00'] : [XL.rose, 'FFA3171F']; c.fill = xlFill(col[0]); c.font = { name: XL_FONT, size: 10, bold: true, color: { argb: col[1] } } }
+        row.outlineLevel = 2; row.collapsed = false; row.hidden = false; r++;
+      });
+    });
+    const sp = s2.getRow(r); sp.height = 14; sp.addPageBreak(); r++;
+  });
+  if (r === 6) { s2.getCell('A6').value = 'Aucune réponse renseignée à afficher.'; s2.getCell('A6').font = { name: XL_FONT, italic: true, color: { argb: XL.muted } } }
+  xlPage(s2, '5:5');
+
+  /* ---------- 3. Données (tableau à plat, filtrable) ---------- */
+  const s3 = wb.addWorksheet('Données', { views: [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }], properties: { tabColor: { argb: 'FF7CC4A0' } } });
+  const H3 = ['Référence', 'Organisation', 'Commune', 'Enquêteur', 'Statut', 'N° étape', 'Étape', 'Domaine', 'Question / Indicateur', 'Réponse enregistrée', 'Score', 'Commentaire / Analyse'];
+  [18, 28, 15, 18, 13, 9, 26, 20, 52, 40, 8, 40].forEach((w, i) => s3.getColumn(i + 1).width = w);
+  xlTitle(s3, H3.length, 'JOKKOO DIAGNOSTIC — DONNÉES DÉTAILLÉES (TABLEAU FILTRABLE)', 'Une ligne par réponse · filtres actifs sur chaque colonne · Généré le ' + today, meta);
+  s3.getRow(4).height = 6; xlHead(s3, 5, H3);
+  let n3 = 6;
+  data.forEach(o => o.steps.forEach(s => s.rows.forEach(x => {
+    const row = s3.getRow(n3), z = (n3 % 2) ? XL.zebra : XL.white;
+    [o.ref, o.nom, o.commune, o.agent, o.statut, s.n, s.title, x.domain, x.label, x.val, x.score, x.comment].forEach((v, j) => { const c = row.getCell(j + 1); c.value = v; c.font = { name: XL_FONT, size: 10, color: { argb: XL.ink } }; c.fill = xlFill(z); c.border = xlBorder(); c.alignment = { vertical: 'top', wrapText: true, horizontal: j === 5 || j === 10 ? 'center' : 'left' } });
+    if (x.fmt) row.getCell(10).numFmt = x.fmt;
+    n3++;
+  })));
+  if (n3 > 6) s3.autoFilter = 'A5:L' + (n3 - 1);
+  xlPage(s3, '5:5');
+  return wb;
+}
+
+async function exportExcelStyled() {
+  const diagnostics = db.diagnostics || [];
+  if (!diagnostics.length) { toast('Aucune enquête à exporter'); return }
+  let X;
+  try { X = await archLoadLib() } catch (e) { toast('Export Excel impossible : ' + errMsg(e)); return }
+  try {
+    const wb = xlBuild(X, diagnostics), buf = await wb.xlsx.writeBuffer();
+    download('JOKKOO_Export_Enquetes_' + new Date().toISOString().slice(0, 10) + '.xlsx', buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    toast('Export Excel téléchargé');
+  } catch (e) { console.error(e); toast('Export Excel impossible : ' + errMsg(e)) }
 }
 /* ===== Ajouts : droits d'édition, enquêtes de l'enquêteur, tableau de bord, statistiques ===== */
 const canEdit = d => !!d && role() === 'enqueteur' && d.meta.enqueteurId === ME.profile.id && ['Brouillon', 'Sauvegardée'].includes(d.status) && !d._conflict;
